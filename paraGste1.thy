@@ -37,7 +37,7 @@ and
 
 
 primrec down ::"nat \<Rightarrow>nat list" where
-downNil:"down 0=[0]" |
+down0:"down 0=[0]" |
 downSuc:"down (Suc n)=Suc n #(down n)"
  
 
@@ -57,8 +57,8 @@ moreExForm: " existsForm (i#j#xs)  forms = orForm (forms i) (forallForm (j#xs)  
 type_synonym formulaExpPair="formula \<times>  expType"
 
 primrec caseExp::"formulaExpPair list  \<Rightarrow> expType" where
- "caseExp [] = unKnown"|
- "caseExp (gp # tls) =iteForm (fst gp) (snd gp) (caseExp tls )"
+ caseNil: "caseExp [] = unKnown"|
+ caseTail:"caseExp (gp # tls) =iteForm (fst gp) (snd gp) (caseExp tls )"
  
  
 
@@ -108,10 +108,6 @@ datatype generalizeStatement= Parallel "statement list"  |
 text{*Variables of a variable, an expression, a formula, and a statement is defined by
 varsOfVar, varOfExp, varOfForm and varOfSent respectively*}
 
-(*definition varsOfVar::" varType \<Rightarrow> varType  "  where  [simp]:
-" varsOfVar x  = [x]"*) 
-
- 
 
 primrec varOfExp::"expType \<Rightarrow> varType list"  and
   varOfForm::"formula \<Rightarrow> varType list"  where 
@@ -136,12 +132,6 @@ primrec varOfExp::"expType \<Rightarrow> varType list"  and
 primrec  varOfSent::"statement \<Rightarrow> varType list" where
 " varOfSent  (assign a)=[  (fst a)] " 
 
-(*primrec  varOfGenSt::"generalizeStatement \<Rightarrow> varType set" where
-" varOfSent  (assign a)=( varsOfVar  (fst a)) " 
-
-lemma varsOfSent1:
-  " (varOfSent S) = set (map fst (statement2Assigns S))"
-  proof(induct_tac S,auto) qed *)   
 
 datatype generalizeStatement1= Parallel1 "generalizeStatement1 list"  |
    If1 formula generalizeStatement1 generalizeStatement1 |
@@ -164,23 +154,16 @@ abbreviation skip::" generalizeStatement" where
 "skip \<equiv> Parallel []"
 
 fun caseStatement::"formulaStatementPair list  \<Rightarrow> generalizeStatement" where
- caseStatement1:"caseStatement [gp] =If  (fst gp) (snd gp) skip"|
+  caseStatement1:"caseStatement [gp] =If  (fst gp) (snd gp) skip"|
   caseStatement2:"caseStatement (gp # tls) =If (fst gp) (snd gp) (caseStatement tls )"
 
 definition writeArr'::"varType \<Rightarrow> nat \<Rightarrow>expType \<Rightarrow>expType\<Rightarrow> generalizeStatement"  where [simp]:
-"writeArr' a bound adre  ce\<equiv> caseStatement (map  (\<lambda>i. ((eqn adre (Const (index i))),Parallel [assign ((Para a i), ce)])) (down bound))"
- 
-(*primrec write'::"varType \<Rightarrow> nat \<Rightarrow>nat \<Rightarrow> expType \<Rightarrow>expType\<Rightarrow> generalizeStatement" where
-"write' a bound 0 adre ce = ( bound = 0)  *)
-
-
-
+"writeArr' a bound adre  ce\<equiv> caseStatement 
+(map  (\<lambda>i. ((eqn adre (Const (index i))),Parallel [assign ((Para a i), ce)])) (down bound))"
  
 
 text{*With the formalizatiion of formula and statement, it is natural to define a rule. A guard and
- statement of a rule are also defined for convenience. 
- 
-*}
+ statement of a rule are also defined for convenience. *}
  
 section{*gste graph*} 
  
@@ -206,9 +189,7 @@ primrec sink::"edge \<Rightarrow> node" where
 
 primrec edgesOf ::"gsteSpec  \<Rightarrow>  edge set" where 
 "edgesOf  (Graph  init  edges ant conss) = set edges   "
-
-(*primrec nodes ::"gsteSpec  \<Rightarrow> node set" where 
-"nodes (Graph  init  edges ant conss) = set ns"*) 
+ 
 
 definition sourcesOf ::" edge set \<Rightarrow> node \<Rightarrow> node set" where
 "sourcesOf es n =   {m.  Edge m n  \<in> es } " 
@@ -245,52 +226,11 @@ type_synonym state= "varType \<Rightarrow> scalrValueType "
 
 datatype  circuit=Circuit "varType list" "varType list" "varType list" "statement list"  "statement list"
 
-(*primrec outputFun::"circuit \<Rightarrow> statement list" where
-"outputFun (Circuit inputs regs outs outf nf)  = outf"
-
-primrec nextFun::"circuit \<Rightarrow> statement list" where
-"nextFun (Circuit inputs regs outs outf nf) =nf"
-
-primrec inputsOf::"circuit \<Rightarrow> varType set" where
-"inputsOf (Circuit inputs regs outs outf nf) =set inputs"
-
-primrec regsOf::"circuit \<Rightarrow> varType set" where
-"regsOf (Circuit inputs regs outs outf nf) =set regs"
-
-primrec outputsOf::"circuit \<Rightarrow> varType set" where
-"outputsOf (Circuit inputs regs outs outf nf) =set inputs"*)
 
 definition varsOfVar::" varType \<Rightarrow> varType set"  where  [simp]:
 " varsOfVar x  = {x}" 
 
-(*primrec varOfExp::"expType \<Rightarrow> varType set"  and
-  varOfForm::"formula \<Rightarrow> varType set"  where 
-"varOfExp  (IVar v) =   varsOfVar v" |
-"varOfExp   (Const j) =  {}" |
-"varOfExp   top={}"|
-"varOfExp   unKnown={}"|
-"varOfExp   (iteForm f e1 e2) =(varOfForm f) \<union>  (varOfExp   e1 )  \<union>   (varOfExp  e2)" |
-"varOfExp   (uif f es) =    (Union (set (map varOfExp  es)))" |
 
-"varOfForm   (eqn e1 e2) = ( (varOfExp   e1 )  \<union>   (varOfExp  e2))" |
-"varOfForm   (uip p es) =    (Union (set (map varOfExp  es)))" |
-"varOfForm   ( andForm f1 f2) =(  (varOfForm  f1 )  \<union>  (varOfForm  f2 ))"|
-"varOfForm   (neg f1 ) = (  (varOfForm   f1 ))"|
-"varOfForm   (orForm f1 f2) =(  (varOfForm   f1 )   \<union>   (varOfForm  f2 ))"|
-"varOfForm   (implyForm f1 f2) = (  (varOfForm  f1 )  \<union>  (varOfForm f2 ))"|
-"varOfForm   (chaos) ={}"*)
-
-
-
-(*primrec wellDefinedCircuit:: "circuit \<Rightarrow> bool" where
-"wellDefinedCircuit (Circuit inputs regs outs outf nf) =
-(((set inputs) \<inter> (set  regs) = {}) \<and> ((set inputs) \<inter> (set  outs) = {})\<and>((set regs) \<inter> (set  outs) = {})
-  \<and> (\<forall> \<alpha>. (\<alpha> \<in> set outf) \<longrightarrow> ((assignedVar \<alpha>) \<in> set outs ))
-  \<and> (\<forall> \<alpha>. (\<alpha> \<in> set nf) \<longrightarrow> ( (assignedVar \<alpha>) \<in>  set regs ))
-  \<and> (\<forall> \<alpha>. (\<alpha> \<in> set outf) \<longrightarrow> ((varOfExp (assignedExp \<alpha>)) \<subseteq> set (regs@inputs@outs) ))
-  \<and> (\<forall> \<alpha>. (\<alpha> \<in> set nf)\<longrightarrow> ((varOfExp (assignedExp \<alpha>)) \<subseteq> set (regs@inputs@outs) ))
-  \<and> (distinct (map assignedVar nf)) 
-  \<and> (distinct (map assignedVar outf)) )"*)
 
 type_synonym scalrValueTypeListFun="scalrValueType list \<Rightarrow> scalrValueType"
 
@@ -353,23 +293,6 @@ fun genTrans1::"generalizeStatement1\<Rightarrow> interpretFunType  \<Rightarrow
 "genTrans1 (Parallel1 (S#ss)) I s x= (if (x \<in> (assignedVars S)) then genTrans1  S  I s x else genTrans1 (Parallel1 ss) I s x) " |
 "genTrans1 (If1 b S1 S2) I s x=(if (formEval I b s) then (genTrans1  S1 I s x) else  (genTrans1 S2 I s x))"
 
-(*datatype  circuit1=Circuit1 "varType list" "varType list"  "generalizeStatement"  
-
-datatype  circuit2=Circuit2 "varType list" "varType list"  "generalizeStatement1"
-
-primrec nextFun1::"circuit1 \<Rightarrow> generalizeStatement " where
-"nextFun1 (Circuit1 inputs regs  nf) =nf"
-
-primrec inputsOf1::"circuit1 \<Rightarrow> varType set" where
-"inputsOf1 (Circuit1 inputs regs nf) =set inputs"
-
-primrec regsOf1::"circuit1 \<Rightarrow> varType set" where
-"regsOf1 (Circuit1 inputs regs  nf) =set regs"
-
-primrec wellGenStatement::"generalizeStatement \<Rightarrow> bool" where
-"wellGenStatement (Parallel S) = wellformedAssgnList (map statement2Assigns S)"  |
-"wellGenStatement (If b S1 S2) = ((wellGenStatement S1) \<and> (wellGenStatement S2))"*)
-
 
 definition transOfCircuit2::"generalizeStatement1 \<Rightarrow>interpretFunType \<Rightarrow>state \<Rightarrow>state " where [simp]:
 "transOfCircuit2 M I s  \<equiv> (genTrans1 M I s)"
@@ -382,10 +305,6 @@ fun istrajOfCircuit1::"generalizeStatement\<Rightarrow> interpretFunType \<Right
 "istrajOfCircuit1 M I [s] = True" |
 "istrajOfCircuit1 M I (s#s'#sq) =(   s'=transOfCircuit1 M I  s \<and>istrajOfCircuit1 M I (s'#sq))"
 
-(*fun istrajOfCircuit2::"generalizeStatement1  \<Rightarrow> interpretFunType \<Rightarrow> state list \<Rightarrow> bool" where [simp]:
-"istrajOfCircuit1 M I [] = True"|
-"istrajOfCircuit1 M I [s] = True" |
-"istrajOfCircuit1 M I (s#s'#sq) =(   s'=transOfCircuit1 M I  s \<and>istrajOfCircuit1 M I (s'#sq))"*)
 
 definition circuitSatGsteSpec1::"generalizeStatement \<Rightarrow> gsteSpec \<Rightarrow>  interpretFunType \<Rightarrow>bool" where
 "circuitSatGsteSpec1 M G I\<equiv> \<forall> p sq. istrajOfCircuit1 M I sq \<longrightarrow> isGstePath' p G \<longrightarrow> (length p= length sq)
@@ -429,13 +348,7 @@ substUif: "substExp (uif f es) asgns =( uif f (map (\<lambda>e. substExp e asgns
 primrec  preCond1 ::" formula \<Rightarrow> generalizeStatement  \<Rightarrow>formula" where
 "preCond1 f (Parallel S)  = substForm f (map statement2Assigns S) " |
 "preCond1 f  (If b S1 S2) = orForm (andForm b (preCond1 f  S1)) (andForm (neg b) (preCond1 f  S2))"
-(*
-fun  preCond2 ::" formula \<Rightarrow> generalizeStatement1  \<Rightarrow>formula" where
-"preCond2 f (Parallel1 [])  =f " |
-"preCond2 f (Parallel1 (S#ss))= 
-(if (x \<in> (assignedVars S)) then genTrans1  S  I s x else genTrans1 (Parallel1 ss) I s x)
-"preCond1 f  (If b S1 S2) = orForm (andForm b (preCond1 f  S1)) (andForm (neg b) (preCond1 f  S2))"
-*)
+
 
 primrec  preExp1 ::" expType \<Rightarrow>  generalizeStatement  \<Rightarrow>expType" where [simp]:
 "preExp1 e  (Parallel S)  = substExp e (map statement2Assigns S)  " |
@@ -612,8 +525,6 @@ lemma uipPre:
    have b1:"(map ((\<lambda>e. expEval I e s) \<circ> (\<lambda>e. substExp e (map statement2Assigns S))) es) =
       (map (\<lambda>e. expEval I e (transAux (map statement2Assigns S) I s)) es)"
       using a1 by auto
-   
-      
    then show "?LHS ?nf=?RHS ?nf" apply simp
    apply( simp add:b1)
    done
@@ -743,7 +654,6 @@ next
 qed       
 
 lemma lemmaOnPre:
-  
   shows "(expEval I (preExp1 e nf) s =   expEval I  e (genTrans nf I s)) \<and>
    (formEval I (preCond1 f nf) s = formEval I f (genTrans nf I s))"
    (is "((  ?LHS e =?RHS e )\<and> ( ?LHS1 f =?RHS1 f ))")      
@@ -838,11 +748,6 @@ shows "expEval I (preExp1 e nf) s =   expEval I e (genTrans nf I s) "
 lemma lemmaOnPreForm:  
 shows "formEval I (preCond1 f nf) s = formEval I f (genTrans nf I s)"
   by (simp add: lemmaOnPre)
-(*lemma lemmaOnPreCond:
-  assumes a1:"wellDefinedCircuit1 M" and a2:"M=Circuit1 inputs regs   nf" and
-  a3:"(varOfForm f) \<subseteq> (regsOf1 M)" and a4:"formEval (preCond1 f M) s "
-  shows "  (( formEval f (transOfCircuit1 M s))) "
-  using a4 a1 a2 a3 lemmaOnPre by blast*)
 
 section{*main lemma: consistency lemma*}
   
@@ -871,19 +776,6 @@ definition consistent'::"generalizeStatement \<Rightarrow> interpretFunType \<Ri
    let f'=andListForm (tag (source e)) in
   tautlogy (implyForm (andForm f' (antOf G e)) (preCond1  f    M )) I)))"
  
-(*definition consistent'::"circuit1 \<Rightarrow> interpretFunType \<Rightarrow> gsteSpec \<Rightarrow> nodeTagFuncList \<Rightarrow> bool" where [simp]:
-"consistent' M I G tag \<equiv>( \<forall>e. 
-  (e \<in> edgesOf G \<longrightarrow> 
-  (let f=andListForm (tag (sink e)) in
-  (tautlogy (implyForm (antOf G e) (preCond1  f  (nextFun1 M))) I \<or>
-  (\<exists>f'. (f' \<in>(set  (tag (source e))) \<and>
-  tautlogy (implyForm (andForm f' (antOf G e)) (preCond1 f  (nextFun1 M))) I ))))))"*)
-
-(*definition consistentInst::" gsteSpec \<Rightarrow> nodeTagFuncList \<Rightarrow> bool" where [simp]:
-"consistentInst  G tag \<equiv>( \<forall>e. 
-  (e \<in> edgesOf G \<longrightarrow> 
-  (let f=andListForm (tag (source e)) in
-  (tautlogy (implyForm (andForm f (antOf G e)) (consOf G e))))))"*)
 
 fun sqSatTagFunc::"state list \<Rightarrow> interpretFunType\<Rightarrow> edge list\<Rightarrow>nodeTagFuncList\<Rightarrow> bool" where [simp]:
 "sqSatTagFunc [] I [] tag = True"|
@@ -919,8 +811,7 @@ lemma sqSatConsisitentGraph:
   using  b5 lemmaOnPre by blast
  qed
 
-(*definition stateSpec::"circuit1 \<Rightarrow> gsteSpec\<Rightarrow>nodeTagFuncList \<Rightarrow> bool" where [simp]:
-"stateSpec M G tag \<equiv>\<forall> e. e \<in>edgesOf G \<longrightarrow> (varOfForm (andListForm (tag (sink e)))) \<subseteq> (regsOf1 M)"*)
+
  
 lemma consistentLemmaAux:
   assumes a1:"consistent' M I G tag"  
@@ -1256,129 +1147,7 @@ by (simp add: substNIl)
 lemma substNIlExp[simp]: 
   shows " (substExp e [] =e)"
 by (simp add: substNIl) 
-  (*fix x
-  let ?e="IVar x"
-  show "(substExp ?e [] = ?e)" by auto
-next
-  fix x1 x2 x3
-  assume a1:" substForm x1 [] = x1"
-  and a2:" substExp x2 [] = x2" and a3:"substExp x3 [] = x3 "
-  let ?e="(iteForm x1 x2 x3)"
-  show "(substExp ?e [] = ?e)" 
-   using a1 a2 a3 by auto
-next
-  fix x 
-  let ?e="Const x"
-  show "(substExp ?e [] = ?e)" by auto
-next
-  fix x1 x2
-  assume b1:" (\<And>x2a. x2a \<in> set x2 \<Longrightarrow> substExp x2a [] = x2a) "
-   
-  show " substExp (uif x1 x2) [] = uif x1 x2"
-  using b1 substMap by blast  
-next
-  let ?e="top"
-  show "(substExp ?e [] = ?e)" by auto
-next
-  let ?e="unKnown"
-  show "(substExp ?e [] = ?e)" by auto
   
-next
-  fix x1 x2
-  assume a1:"substExp x1 [] = x1" and a2:" substExp x2 [] = x2"
-  let ?f="eqn x1 x2"
-  show "substForm ?f [] =?f"
-  using a1 a2 by auto*)
-  
-  
-(*lemma valOfLemma8Aux[simp]: 
-assumes a:"0 < depth" 
-shows " \<forall>L. i < depth   \<longrightarrow> (valOf (map (\<lambda>i. (Para v i, e i)) [0..<depth]@L) (Para v i))=e i"
-  (is "?P depth")
-  proof(induct_tac depth, simp  )
-   
-  fix n
-   assume b: "?P (n)" 
-   show "?P (Suc n)"   
-   proof(rule allI,rule impI)
-    fix L
-    assume c:"i<Suc n"
-    
-    show "valOf (map (\<lambda>i. (Para v i, e i)) [0..<Suc n]@ L) (Para v i) = e i" (is "?Q L") 
-    proof(case_tac "i< n")
-      assume d:"i <n"
-      show "?Q" 
-        using d b by auto
-
-  
-    fix i
-    assume c:"i<Suc n"
-    show "valOf (map (\<lambda>i. (Para v i, e i)) [0..<Suc n]) (Para v i) = e i" (is "?Q")        
-lemma valOfLemma8[simp,intro]: 
-"  i <depth \<and> 0<depth \<Longrightarrow> (valOf (map (\<lambda>i. (Para v i, e i)) [0..<depth]) (Para v i))=e i" 
-  sorry         *)       
-(*lemma valOfLemma3 [simp]:"(\<forall> i.  var' \<noteq> Para v i) \<Longrightarrow>  (valOf (map (\<lambda>i. (Para v i, e i)) (down N)) var')=IVar var'"
-apply(rule valOfLemma2)
-apply(induction N)
-by auto  
-   
-lemma valOfLemma5Aux :"( valOf (statement2Assigns   S ) v=IVar v) \<and>  
-  ( valOf (statement2Assigns S') v=IVar v)\<longrightarrow>( valOf (statement2Assigns  (cat S S')) v=IVar v) "
-    proof(induct_tac S,auto)qed
-    
-lemma valOfLemma5 [simp,intro]:"( valOf (statement2Assigns   S ) v=IVar v) \<and>  
-  ( valOf (statement2Assigns S') v=IVar v)  \<Longrightarrow> ( valOf (statement2Assigns  (cat S S')) v=IVar v) "
-  by(metis  valOfLemma5Aux)
-  
-lemma valOfLemma6Aux :"( valOf (statement2Assigns   S ) v=IVar v) \<and>   
-  ( valOf (statement2Assigns S') v=IVar v)\<longrightarrow>( valOf (statement2Assigns  (cat S S')) v=IVar v) "
-    proof(induct_tac S,auto)qed
-
-
-lemma valOfLemma7Aux:"v \<notin> varOfSent S \<longrightarrow>( valOf (statement2Assigns  (cat S S')) v) =    ( valOf (statement2Assigns S')) v"
-proof(induct_tac S,auto)qed
-
-lemma valOfLemma7 [simp,intro]:"v \<notin> varOfSent S \<Longrightarrow>( valOf (statement2Assigns  (cat S S')) v) =    ( valOf (statement2Assigns S')) v"
-by(metis valOfLemma7Aux)
-
-lemma valOfLemma8Aux:"v \<in> varOfSent S \<longrightarrow>( valOf (statement2Assigns  (cat S S')) v) =    ( valOf (statement2Assigns S)) v"
-proof(induct_tac S,auto)qed
-
-lemma valOfLemma8A[simp,intro]:"v \<in> varOfSent S \<Longrightarrow>( valOf (statement2Assigns  (cat S S')) v) =    ( valOf (statement2Assigns S)) v"
-by(metis valOfLemma8Aux)    
-
-
-lemma noEffectValOfStatementAux[intro]:
-  shows "( v \<notin>  (varOfSent S) )\<longrightarrow> valOf (statement2Assigns  S)  v=IVar v" (is "?P N") 
- proof(induct_tac S,auto)qed
- 
-  lemma noEffectValOfStatement[simp,intro]:
-  assumes "( v \<notin>  (varOfSent S)) "
-  shows   "valOf (statement2Assigns  S)  v=IVar v" (is "?P N")
-by (metis assms valOfLemma2Aux varsOfSent1) 
- 
- lemma noEffectValOfForallStatementAux[intro]:
-  shows "( \<forall>i. (v\<notin>  (varOfSent (ps i)) ))\<longrightarrow> valOf (statement2Assigns  (forallSent (down N) ps)) v=IVar v" (is "?P N")
-  proof(induct_tac N)
-    show "?P 0"
-      apply simp
-      done
-   next
-    fix N
-    assume b1:"?P N"
-    show "?P (Suc N)"
-    proof(rule impI)
-      assume c1:" \<forall>i. v \<notin> varOfSent (ps i)"
-      show "valOf (statement2Assigns (forallSent (down (Suc N)) ps)) v = IVar v"
-      proof(rule noEffectValOfStatement)
-        have "   varOfSent (forallSent (down (Suc N)) ps) \<inter>{v} = {}"  thm forallVars
-        proof(rule  forallVars,cut_tac c1,auto)qed
-        then show   " v \<notin> varOfSent (forallSent (down (Suc N)) ps)"
-        by (metis c1 forallVars1) 
-      qed
-  qed 
-  qed
-  *)  
 lemma tautologyImplTrans[intro!]:
   assumes a1:"tautlogy (implyForm P Q) I" and a2:"tautlogy (implyForm  Q R) I"
   shows "tautlogy (implyForm P R) I"
@@ -1486,22 +1255,7 @@ lemma OnIfNeg1[simp,intro]:
   assumes a1:"tautlogy  (implyForm pre (neg b)) I" 
   shows "tautlogy  (implyForm pre (preCond1 f (If b S1 S2))) I = tautlogy  (implyForm pre (preCond1 f  S2 )) I "  
     by (cut_tac a1,auto) 
-    
-lemma eqAssignsCong[simp,intro]:
-  assumes a:"formEval I (eqn e1 e2) s" 
-  shows "formEval I ( substForm f [(v,e1)]) s = formEval I (substForm f [(v,e2)]) s \<and> 
-  expEval I (substExp e [(v,e1)]) s=expEval I (substExp e [(v,e2)]) s"
-  (*proof(induct_tac f and e)   *) sorry 
-  
-lemma eqImply[simp,intro]:  
-  assumes a:"tautlogy  (implyForm pre b) I"
-  shows "tautlogy (implyForm  pre (eqn (iteForm b e1 e2) e1)) I"
-  apply(cut_tac a,auto) done
-  
-lemma onIfExpPos[simp,intro]:  
-  assumes a:"tautlogy  (implyForm pre b) I "
-  shows "tautlogy  (implyForm pre (substForm f [(v,iteForm b e1 e2)])) I = tautlogy  (implyForm pre (substForm f [(v, e1)])) I " 
- sorry
+
   
     
 lemma preCondAndList[simp]:

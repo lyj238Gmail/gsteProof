@@ -1,0 +1,50 @@
+let LAST =7; let MSBD=63; let MSBA=3;
+
+
+let rst = “rst0”; let push = “push0”; 
+let pop = “pop0”; let empty = “empty0”; 
+let full = “full0”;
+
+let dataIn w = map (\i.(”dataIn<”^(int2stri)^”>0”)) (0 upto w);
+let dataOut w = map (\i.(”dataOut<”^(int2stri)^”>0”)) (0 upto w);
+let head w=map (\i.(”head<”^(int2stri)^”>0”)) (0 upto w);
+let tail w=map (\i.(”tail<”^(int2stri)^”>0”)) (0 upto w); 
+
+let D tmp w=map (\str. bvariable str) (map (\i.(tmp^"< ”^(int2stri)” > 0”)) (0 upto w));
+let rstForm=Is1 rst;
+let pushForm=TAndList[Is1 push,Is0 rst];
+
+let popForm=AndList[Is1 popT,Is1popT, Is0 rst];
+
+let pushDataForm w=TAndList[ pushForm,((dataIn w) bvAre (D w)];
+let nPushPopForm=TAndList[Is0 rst,Is0 push,Is0 pop];
+let popData w dg= (dataOut w) bvAre (dg w)
+let nFull = Is0 full;
+let full = Is1 full;
+let nEmpty = Is0 empty;
+let empty = Is1 empty;
+
+let bantOfFifo w e ≡
+let from=source e in let to=sink e in if (from = 0) then
+rstF orm
+elseif (from = to) then
+nP ushP opF orm
+elseif ((from mod 2) = 1) then
+(if ((from + 2) = to) then pushF orm
+elseif (from = (to + 2)) then popF orm
+else pushDataForm w) else popForm
+bconsOfFifo LAST w e ≡
+let from = (source e) in let to = (sink e) in
+if (from mod 2) = 1)∧(to mod 2) = 1) then
+(if (from = 1) then
+emptyF ormTAndList,nF ullF orm
+elseif (from = 2 ∗ LAST + 3) then (nEmptyF ormTAndList,f ullF orm
+else nEmptyFormTAndList,nFullForm) elseif (from = 4TAndList,to = 1) then
+popDataForm w
+elseif(from = (2 ∗ LAST + 4))then
+(nEmptyF ormTAndList,f ullF orm) elseif(from = 1)then
+(emptyF ormTAndList,nF ullF orm) elseif(from ̸= 0)then
+(nEmptyF ormTAndList,nF ullF orm) else chaos
+bfifoGsteSpec LAST w ≡
+(0; vertexL LAST; edgeL LAST; bantOfFifo w; bconsOfFifo
+LAST w)
