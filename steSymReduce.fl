@@ -1,0 +1,763 @@
+//******************************************************************************************************************************************
+//theorem prover for STE model checking
+//
+//code by:
+//Yongjian Li, Naiju Zeng
+//State Key Lab of Computer Science, Chinese Academy of Sciences, China
+//******************************************************************************************************************************************
+
+//******************************************************************************************************************************************
+//trajectory form
+
+lettype trajForm = Is1 string
+                	| Is0 string
+               	| Next trajForm
+                	| Guard bexpr trajForm
+                	| TAndList (trajForm list)
+        	    	| Chaos
+;
+
+letrec trajForm2Str (Is1 node) = "Is1 " ^ node
+/\	 trajForm2Str (Is0 node) = "Is0 " ^ node
+/\	 trajForm2Str (Next tfF) = "Next " ^ (trajForm2Str tfF)
+/\	 trajForm2Str (Guard b tf) = "Guard " ^ (bexpr2str 200 b ) ^ " " ^ (trajForm2Str tf)
+/\	 trajForm2Str (TAndList tfL) = "TAndList [" ^ (itlist (\tf. \str. (trajForm2Str tf) ^ "," ^ str) tfL "") ^ "]"
+/\	 trajForm2Str Chaos = "Chaos"
+;
+
+install_print_function trajForm2Str;
+
+let Isb P str = TAndList [(Guard P (Is1 str)), (Guard (bNOT P) (Is0 str))]; //Isb value node
+
+
+//******************************************************************************************************************************************
+//assertion form
+
+lettype assertion = TImply trajForm trajForm; //antecedent => consequent
+
+let assertion2Str (TImply tf1 tf2) =
+    	"trajectory ant: " ^ (trajForm2Str tf1) ^ "\n-->\n" ^
+    	"trajectory cons: " ^ (trajForm2Str tf2) ^ "\n"
+;
+
+install_print_function assertion2Str;
+
+
+//******************************************************************************************************************************************
+//goal form
+
+lettype goal = Goal (bexpr list) assertion;
+
+let goal2Str (Goal bexprL assertion) =
+    	let strOfbexprL = (itlist (\b. \str. (bexpr2str 200 b) ^ ",\n" ^ str) bexprL "") 
+in    let assStr = assertion2Str assertion 
+in
+    	"Goal \n antecendents: [" ^ strOfbexprL ^ "]\n trajectory assertion: " ^ assStr ^ "\n"
+;
+
+install_print_function goal2Str;
+
+
+//******************************************************************************************************************************************
+//state form
+
+lettype state = State fsm (goal list);
+
+let state2Str (State f gL) = "State " ^ (itlist (\g. \str. (goal2Str g) ^ str) gL "");
+
+install_print_function state2Str ;
+
+//goal number starts at 1;list number start at 1 too;
+let spliceGoals gs newGs n = (firstn (n - 1) gs) @ newGs @ (butfirstn n gs);
+
+
+//******************************************************************************************************************************************
+//literal form
+
+lettype literal = Lit string;
+
+let lit2Str (Lit str) = "LIT " ^ str;
+
+install_print_function lit2Str;
+
+
+//******************************************************************************************************************************************
+//parameter form of subgoal
+
+lettype paraOfSubgoal = None
+     				| useLemma goal (string->bool)   // unify two lemmas
+     				| steTrans trajForm;             //ste Transite
+
+let subgoal goalf i (State ckt goals) inpSel =
+    	State ckt (spliceGoals goals (goalf ckt (el i goals) inpSel) i);
+
+
+//******************************************************************************************************************************************
+//Rule: steTransI
+//decompose A -> C to A-> B and B -> C
+
+let steTransIGoalf ckt goal inpSel =
+    	val (Goal bAnts assert) = goal 
+in    val (TImply ant cons) = assert 
+in    val (steTrans tf) = inpSel 
+in
+    	[(Goal (bAnts ) (TImply ant tf)), (Goal bAnts (TImply tf cons))]
+;
+
+let steTransI  B i  st  = subgoal steTransIGoalf i st (steTrans B);
+
+
+//******************************************************************************************************************************************
+//Rule: steImpI
+//extract the guard forward
+
+let steImpIGoalf ckt goal inpSel =
+    	val (Goal bAnts assert) = goal 
+in    val (TImply ant cons) = assert 
+in    val (Guard P cons0) = cons 
+in
+    	[Goal (bAnts@[P]) (TImply ant cons0)]
+;
+
+let steImpI i st = subgoal steImpIGoalf i st None;
+
+
+//******************************************************************************************************************************************
+//Rule: steConjI
+//decompose the consequent from a list to sigle one
+
+let steConjIGoalf ckt goal inpSel =
+    	val (Goal bAnts assert)=goal 
+in    val (TImply ant cons) = assert 
+in    val (TAndList consTrfL) = cons 
+in    val (trajForm1:trajFormL2) = consTrfL 
+in
+    	(Goal bAnts (TImply ant trajForm1)):(map (\tf. (Goal bAnts (TImply ant tf))) trajFormL2)
+;
+
+let steConjI i st = subgoal steConjIGoalf i st None;
+
+
+//******************************************************************************************************************************************
+//Rule: steSymbSim
+//run STE directly
+
+//turn the trajectory form to five tuple list accepted by STE
+letrec trajForm2FiveTuples (Is1 n) = [(T,n,T,0,1)]
+/\  	trajForm2FiveTuples (Is0 n) = [(T,n,F,0,1)]
+/\  	trajForm2FiveTuples (TAndList TLs) = flat (map trajForm2FiveTuples TLs)
+/\  	trajForm2FiveTuples (Next TF) = 
+		let tfs1 = trajForm2FiveTuples TF 
+	in
+    		map (\tuple. val (g,n,v,s,e) = tuple in (g,n,v,s+1,e+1)) tfs1
+/\   	trajForm2FiveTuples (Guard P f) =
+    		let tfs1 = trajForm2FiveTuples f 
+	in	val ([g']) = bexpr2bdd [] [P] 
+	in
+    		map  (\tuple. val (g,n,v,s,e) = tuple in ((g AND g'),n,v,s,e)) tfs1
+;
+
+let trajFiveTuple2Str FiveTuples =
+    	itlist (\(When,Node,Value,From,To). \PrintString.
+           	(sprintf "(%s,%s,%s,%d,%d) " ((bool2str 10 When),Node,(bool2str 10 Value),From,To)) ^ PrintString)
+           FiveTuples ""
+;
+
+//install_print_function trajFiveTuple2Str ;
+
+let steSymbSimGoalf ckt goal inpSel =
+    	val (Goal bAnts assert) = goal 
+in    val (TImply ant cons) = assert 
+in    let ant = trajForm2FiveTuples ant 
+in    let bP = itlist (\bant. \b. bant bAND b) bAnts bT 
+in    let cons = trajForm2FiveTuples (Guard bP cons) 
+then
+  	//print ("ant\n"^(trajFiveTuple2Str ant)^"\n") fseq
+  	//print ("cons\n"^(trajFiveTuple2Str cons)^"\n") fseq
+   	(STE "-w -y -S"  ckt [] ant cons []) => [] 
+|	error "STE Tatics fails"
+;
+
+let steSymbSim i st = subgoal steSymbSimGoalf i st None;
+
+
+//******************************************************************************************************************************************
+//transition between bfivetuple and trajectory form
+
+letrec bfiveTuple2trajForm (g1,n,v1,0,1) = Guard g1 ((v1 = bT) => Is1 n | Is0 n)
+/\ 	 bfiveTuple2trajForm (g1,n,v1,t,t') = Next (bfiveTuple2trajForm (g1,n,v1,(t-1),(t'-1)))
+;
+
+letrec trajForm2BFiveTuples (Is1 n) = [(bT,n,bT,0,1)]
+/\  	 trajForm2BFiveTuples (Is0 n) = [(bT,n,bF,0,1)]
+/\  	 trajForm2BFiveTuples (TAndList TLs) = flat (map trajForm2BFiveTuples TLs)
+/\  	 trajForm2BFiveTuples (Next TF) =
+    		let tfs1 = trajForm2BFiveTuples TF 
+	in
+    		map (\tuple. val (g,n,v,s,e) = tuple in (g,n,v,s+1,e+1)) tfs1
+/\   	 trajForm2BFiveTuples (Guard P f) =
+    		let tfs1 = trajForm2BFiveTuples f 
+	in
+    		map (\tuple. val (g,n,v,s,e) = tuple in ((g bAND P),n,v,s,e)) tfs1
+;
+
+
+//******************************************************************************************************************************************
+//Rule: steIdI
+//unify a goal if its consequent contains in antecedent
+
+let steIdIGoalf ckt goal inpSel =
+    	val (Goal bAnts assert) = goal 
+in	val (TImply ant cons) = assert 
+in	let anttuples = trajForm2BFiveTuples ant	
+in    let constuples = trajForm2BFiveTuples cons 	
+in
+    	((constuples subtract anttuples) = []) => []
+|	[goal]
+;
+
+let steIdI i st = subgoal steIdIGoalf i st None;
+
+
+//******************************************************************************************************************************************
+//Rule: steSimpByDelAnt
+//filter the antecedent that doesn't affect the consequent
+
+letrec onNodes (Is1 n) = [n]
+/\  	onNodes (Is0 n) = [n]
+/\  	onNodes (TAndList TLs) = setify (flat (map onNodes TLs))
+/\  	onNodes (Next TF) = onNodes TF
+/\  	onNodes (Guard P f) = onNodes f
+;
+
+letrec bcoiOf ckt (node:nodeL) computed =
+  	(mem node computed) => bcoiOf ckt nodeL computed 
+|	(is_input ckt node) => bcoiOf ckt nodeL (node:computed)                       
+| 	let fanins = (fanin ckt node) subtract [node] 			
+	then
+      bcoiOf ckt (fanins@nodeL) (node:computed)
+/\ 	bcoiOf ckt [] computed = computed
+;
+
+let delAnts dependentNodes ant =
+	let anttuples = trajForm2BFiveTuples ant
+in	let newanttuples = filter (\tp. (val (bg,n,bv,from,to) = tp in (mem n dependentNodes))) anttuples
+in	
+	TAndList (map  bfiveTuple2trajForm newanttuples) ;
+;
+
+let steSimpByDelAntGoalf ckt goal inpSel =
+    	val (Goal bAnts assert) = goal 
+in   	val (TImply ant cons) = assert 
+in	let consNodes = onNodes cons
+in	let dependentNodes = bcoiOf ckt consNodes []
+in	let ant1 = delAnts dependentNodes ant
+in
+    	[Goal bAnts (TImply ant1 cons)]
+;
+
+let steSimpByDelAnt i st = subgoal steSimpByDelAntGoalf i st None;
+
+
+//******************************************************************************************************************************************
+//Rule: steDelBant
+//delete the bool expression guard with no use
+
+let steDelBantGoalf ckt goal inpSel =
+	val (Goal bAnts assert) = goal
+in
+	[Goal [] assert]
+;
+
+let steDelBant i st = subgoal steDelBantGoalf i st None;
+
+
+//******************************************************************************************************************************************
+//entity type and symmetry exploration
+
+new_type_abbrev LINE = literal list;
+new_type_abbrev PLA = LINE list;
+lettype LATCHTYPE = LatchType string;
+lettype ENTITY = INPUT string
+		| LATCH string (string list) LATCHTYPE
+		| GATE string (string list) PLA 
+;
+
+let chr2Lit "1" = Lit "1"
+/\  chr2Lit "0" = Lit "0"
+/\  chr2Lit  "-" = Lit "-"
+;
+
+let nodeFun2Pla ckt node =
+   	let strTab = get_node_truth_table ckt node 
+in   	val tab = map (\line. ((explode line))) strTab 
+in   	let inps = fanin ckt node 
+in    let line2Lits Line = map chr2Lit Line 
+in
+     	map line2Lits tab 
+;
+
+let getEntity ckt node =
+   	(is_input ckt node) => INPUT node 
+|    	(is_latch ckt node) => 
+		let fanins = fanin ckt node 
+	then	let typ = get_latch_type ckt node 
+	then  LATCH node fanins (LatchType typ) 
+|
+    	// a not gate or and gate etc.
+    	let fanins = fanin ckt node 
+	then
+     	GATE node (fanins) (nodeFun2Pla ckt node)
+;
+
+let line2string line = implode (map (\(Lit str). str) line);
+
+
+let ofSameFun (INPUT str1) (INPUT str2) = T
+/\  ofSameFun (LATCH op1 inps1 typ1) (LATCH op2 inps2 typ2) = (typ1=typ2)
+/\  ofSameFun (GATE out1 inps1 pla1) (GATE out2 inps2 pla2) = (pla1=pla2)
+/\  ofSameFun  x y = F
+;
+
+//get the symmetry table
+letrec symAnalz ckt (nodePair:nodePs) isCutPoint biTab =
+  	val (n1,n2) = nodePair 
+in
+//  print ("\n "^n1^"---"^n2^"\n") fseq
+    	(n1=n2) => symAnalz ckt nodePs isCutPoint biTab
+|
+   	(tbl_member biTab n1)
+   		=> (n2 == (tbl_element biTab n1))
+      		=> symAnalz ckt nodePs isCutPoint biTab
+      	|(//print (n1^n2^" redundant err\n") fseq 
+       	(F,biTab))
+       // the first step is to deal with the case when n1 \<in> n2
+|	let isCutPoints1 = isCutPoint n1 
+in    let isCutPoints2 = isCutPoint n2
+in         
+     	(isCutPoints1 AND isCutPoints2) =>
+           	let tb = (tbl_insert biTab n1 n2) 
+	in 
+            symAnalz ckt nodePs isCutPoint  tb
+|	(isCutPoints1 AND (NOT isCutPoints2)) OR ((NOT isCutPoints1) AND isCutPoints2) => (F,biTab)
+          //print (n1^n2^" cut-points not matched\n") fseq      
+|	let entity1 = (getEntity ckt n1) 
+in    let entity2 = (getEntity ckt n2) 
+in
+    	(ofSameFun entity1 entity2) => case (entity1) where
+         	(case (INPUT n1') = (tbl_member biTab n2)
+                 		=> (tbl_element biTab n2 = n1) =>
+					let tb = (tbl_insert biTab n1 n2) 
+				in 
+					symAnalz ckt nodePs isCutPoint tb
+                 	| //print (n1^n2^" Input err\n") fseq 
+                      (F,biTab)
+          	|	let tb = (tbl_insert biTab n1 n2) 
+		in 	symAnalz ckt nodePs isCutPoint tb
+   	/\	case (LATCH op1 inps1 bexp1) = (tbl_member biTab n2)
+                 		=> (tbl_element biTab n2 = n1) =>
+                          	let tb=(tbl_insert biTab n1 n2) 
+				in    val (LATCH n2' inps2 typ2) = entity2 
+				in    let nodePs = nodePs@(zip inps1 inps2) 
+				in
+                             	symAnalz ckt nodePs isCutPoint tb
+              		|
+                    //print (n1^n2^" Latch err\n") fseq 
+            		(F,biTab)
+        	|	let tb = (tbl_insert biTab n1 n2) 
+		in	val (LATCH n2' inps2 typ2) = entity2 
+		in   	let nodePs = nodePs@(zip inps1 inps2) 
+		in
+                  symAnalz ckt nodePs isCutPoint tb
+    	/\	case _ = (tbl_member biTab n2)
+                 		=>(tbl_element biTab n2 = n1) => 
+                           	let tb = (tbl_insert biTab n1 n2) 
+				in	val inps1 = fanin ckt n1 
+				in	val inps2 = fanin ckt n2 
+				in	let nodePs = nodePs@(zip inps1 inps2) 
+				in
+                              symAnalz ckt nodePs isCutPoint tb
+			|
+                    //print (n1^n2^" fun err\n") fseq 
+                     	(F,biTab)
+        	| 	let tb = (tbl_insert biTab n1 n2) 
+		in    val inps1 = fanin ckt n1 
+		in    val inps2 = fanin ckt n2 
+		in	let nodePs = nodePs@(zip inps1 inps2) 
+		in
+                  symAnalz ckt nodePs isCutPoint tb)
+|	(print (n1^n2^" not same funerr\n") fseq 
+      (F,biTab))
+/\   	symAnalz ckt [] isCutPoint biTab = (T,biTab)
+;
+
+
+//******************************************************************************************************************************************
+//get symmetry from trajectory form
+
+letrec symTransform f (Is1 n) = (Is1 ((tbl_element f n) catch n))
+/\     symTransform f (Is0 n)= (Is0 ((tbl_element f n) catch n))
+/\     symTransform f (TAndList TLs) = TAndList (map (symTransform f) TLs)
+/\     symTransform f (Next TF) = Next (symTransform f TF)
+/\     symTransform f (Guard P TF) = Guard P (symTransform f TF)
+;
+
+
+forward_declare {matchTrFormLs:: ((string,string) htbl) ->(trajForm#trajForm) list -> ((string,string) htbl)};
+
+letrec matchTrForm env ((Is0 n1), (Is0 n2)) =
+   	(tbl_member env n1) =>
+     		(((tbl_element env n1) = n2) => env |  error "can not be matched")
+     |	(tbl_insert env n1 n2)
+
+/\  	matchTrForm env ((Is1 n1), (Is1 n2))=
+      	(tbl_member env n1) =>
+     		(((tbl_element env n1) = n2) => env |  error "can not be matched")
+     |	(tbl_insert env n1 n2)
+
+/\    matchTrForm env ((Next tr1), (Next tr2)) = matchTrFormLs env [(tr1, tr2)]
+/\    matchTrForm env ((TAndList trs1), (TAndList trs2)) =
+    		(length trs1 = length trs2) => matchTrFormLs env (zip trs1 trs2) | error  "trajetory formula Unify fails"
+/\  	matchTrForm env ((Guard P1 tr1), (Guard P2 tr2)) = matchTrFormLs env [(tr1,tr2)]
+;
+
+letrec matchTrFormLs env [] = env
+/\	 matchTrFormLs env ((ba1,ba2): ls) = matchTrFormLs (matchTrForm env (  ba1,  ba2)) ls
+;
+
+
+//******************************************************************************************************************************************
+//check bijection of symmetry table
+
+letrec checkBiJection1 tb [] newTb = (T,newTb)
+/\  	 checkBiJection1 tb (k:keys) newTb =
+    		let mk = tbl_element  tb k 
+	in
+    		(mk = k) => checkBiJection1 (tbl_delete tb k) keys newTb
+    	|	(mem mk keys) =>
+      		let mmk=tbl_element  tb mk 
+		in
+       		(mmk = k) => checkBiJection1 (let tb1 = tbl_delete tb k in (tbl_delete tb1 mk)) (keys subtract [ mk]) newTb
+     		|	error "not a swap"
+	|	checkBiJection1 (tbl_delete tb k) keys (tbl_insert newTb mk k)
+;
+
+
+//******************************************************************************************************************************************
+//write symmetry table to file
+
+letrec recprintBiTab tab fout =
+	(tab = []) => ()
+|	
+	let tt = hd tab
+in	let str = (fst tt)^"  <-->  "^(snd tt)^"\n"
+in	
+	fputs fout str
+fseq
+	recprintBiTab (tl tab) fout
+;
+
+let printBiTab tab =
+	let fout = fopen "biTab.txt" "a"
+in	let revtab = rev tab
+then
+	(recprintBiTab revtab fout)
+fseq
+	fclose fout
+;
+
+
+//******************************************************************************************************************************************
+//operations of bool expression 
+
+//be1 = be2
+letrec bexprCmp (be1, be2) =
+    	let btype1 = bget_type be1 
+in    let btype2 = bget_type be2 
+in
+    	(btype1 = btype2) =>
+    		(btype1 = "and") OR (btype1 = "NOT-and") OR (btype1 = "NOT-xnor") OR (btype1 = "xnor")
+       		=> let bargs1=bget_arguments be1 
+		in	let bargs2=bget_arguments be2 
+		in
+         		(bexprCmp ((fst bargs1), (fst bargs2))) AND (bexprCmp ((snd bargs1) ,(snd bargs2)))
+      |	(btype1 = "NOT-variable") OR (btype1 = "variable") => ((bget_variable be1) = bget_variable be2)
+      |	F
+|	F
+;
+
+
+//be1 ==> be2
+letrec bexprSubset be1 be2 =
+ 	(bexprCmp (be1, be2)) => T
+|	let btype1 = bget_type be1 
+in
+    	(btype1 = "and") =>
+      	let bargs1 = bget_arguments be1 
+	in
+          	(bexprSubset (fst bargs1) (be2)) OR (bexprSubset (snd bargs1) (be2))
+|	F
+;
+
+// /\e.beLs ==>be2
+let bexprSubsetL beLs be2 = itlist (\be.\b. (b OR (bexprSubset be be2))) beLs F;
+
+// /\e.beLs1 ==>be2Ls2
+let bexprSubsetLL  beLs1 beLs2 = itlist (\be.\b. (b AND (bexprSubsetL beLs1 be))) beLs2 T;
+
+letrec  bchase env a =
+  	let btype=bget_type a 
+in
+    	(btype = "variable") =>
+          	(mem a (tbl_keys env)) =>
+          		((bchase env (tbl_element env  a)) catch (tbl_element env  a))
+	|
+         	a
+|	a
+;
+
+forward_declare {boccsl::  ( (bexpr,bexpr) htbl) ->bexpr -> (bexpr list)->bool};
+letrec boccurs env a t =
+    	let btype = bget_type t 
+in
+   	(btype = "constant_0") =>F
+|   	(btype = "constant_1") =>F
+|    	(btype="variable") =>
+		val strA = bget_variable a 
+	in    val strB = bget_variable t 
+	in    ((strA=strB)  OR (boccurs env a (tbl_element env t))) catch F
+|    	(btype = "NOT-variable") =>
+		val strA = bget_variable a 
+	in	val strB = bget_variable t 
+	in	(strA=strB)  OR (boccurs env a (tbl_element env (bvariable strB))) catch F
+|
+     	val (t1,t2) = bget_arguments t 
+in
+    	boccsl env a [t1, t2]
+;
+
+letrec boccsl env a ts = ((find_first (boccurs env a) ts)>0) catch F;
+
+forward_declare {bunifyls:: ((bexpr,bexpr) htbl) ->(bexpr#bexpr) list -> ((bexpr,bexpr) htbl)};
+letrec bunify env (ba,bb) =
+    	let batype = bget_type ba 
+in	let bbtype = bget_type bb 
+in
+    	(batype = "variable") => 
+		val strA = bget_variable ba 
+	in        
+		(bbtype = "variable") => 
+			val strB = bget_variable bb 
+		in
+                  ((strA=strB) OR (mem ba (tbl_keys env))) => env 
+		|
+                 	//print ("insert tab: strA="^strA^" strB="^strB^" \n") fseq
+                	let env0 = (tbl_insert env ba bb) then env0
+	|	(boccurs env ba bb) => error ("unify fail"^(bexpr2str 1000 ba)^(bexpr2str 1000 bb))
+	|    	let env0 = (tbl_insert env ba bb) then env0
+|   	((batype= "constant_0") AND (bbtype= "constant_0")) OR ((batype= "constant_1") AND (bbtype= "constant_1")) => env 
+|	((batype= "NOT-variable") AND (str_is_prefix "NOT-" bbtype)) => bunifyls env [((bNOT ba), (bNOT bb))]  
+|	
+	(batype=bbtype) => 
+		val (ba1,ba2) = bget_arguments ba 
+	in	val (bb1,bb2) = bget_arguments bb 
+	in	bunifyls env [(ba1,bb1),(ba2,bb2)] 
+|
+      error ("unify fail"^(bexpr2str 1000 ba)^(bexpr2str 1000 bb))
+;
+
+letrec bunifyls env [] = env
+/\	 bunifyls env ((ba1,ba2):ls) = bunifyls (bunify env (ba1,ba2)) ls
+;
+
+let printBunifyTab tb =
+  	let keys = tbl_keys tb  
+then
+  	foreach [k|keys]. print ((bexpr2str 1000  k)^"-->"^(bexpr2str 1000 (tbl_element tb k))^"\n")
+;
+
+forward_declare {unifyBexprOfTrFormLs:: ((bexpr,bexpr) htbl) ->(trajForm#trajForm) list -> ((bexpr,bexpr) htbl)};
+
+letrec unifyBexprOfTrForm env ((Is0 n1), (Is0 n2)) = (n1=n2) => env | error "trajetory formula Unify fails"
+/\  	 unifyBexprOfTrForm env ((Is1 n1), (Is1 n2)) = (n1=n2) => env | error "trajetory formula Unify fails"
+/\     unifyBexprOfTrForm env ((Next tr1), (Next tr2)) = unifyBexprOfTrFormLs env [(tr1, tr2)]
+/\     unifyBexprOfTrForm env ((TAndList trs1), (TAndList trs2)) =
+    		(length trs1 = length trs2) => unifyBexprOfTrFormLs env (zip trs1 trs2) 
+	| 	error  "trajetory formula Unify fails"
+/\  	 unifyBexprOfTrForm env ((Guard P1 tr1), (Guard P2 tr2))= unifyBexprOfTrForm (bunifyls env [(P1,P2)]) (tr1,tr2)
+/\ 	 unifyBexprOfTrForm env (_, _) = error "trajetory formula Unify fails"
+;
+
+letrec unifyBexprOfTrFormLs env  []  = env
+/\ unifyBexprOfTrFormLs env ((ba1,ba2): ls) = unifyBexprOfTrFormLs (unifyBexprOfTrForm env (ba1,ba2)) ls
+;
+
+
+//******************************************************************************************************************************************
+//normalization of trajectory form
+
+//usaually trajectory formula is systax-driven;
+//but normalized by the order of time and node name and guard bexpr str
+// a normalized example: f1 and N (G ->f2) and N N (G->f3)
+
+let fiveTupleOrder tuple1 tuple2 =
+  	val (g1,n,v1,t,t') = tuple1 
+in  	val (g2,n2,v2,t2,t2') = tuple2 
+in
+  	(t < t2) => -1
+|	(t = t2) =>
+    		((strcmp n  n2) < 0) => -1 
+	|	((strcmp n n2) = 0) => 
+			let v1 = bexpr2str 10000 v1 
+		in    let v2 = bexpr2str 10000 v2 
+		in
+               	((strcmp v1 v2) < 0) => -1 
+		|	((strcmp v1 v2) = 0) => (strcmp (bexpr2str  10000 g1) (bexpr2str  10000 g2)) 
+		|	(strcmp v1 v2)
+     	|	1
+|	1
+;
+
+let trajFormNormalize A =
+    	let b5tuples=trajForm2BFiveTuples A  
+in
+    	TAndList (map bfiveTuple2trajForm (qsort fiveTupleOrder b5tuples)) 
+;
+
+//******************************************************************************************************************************************
+//use lemma to unify a goal
+
+let useLemmaOk lemma (bants) assertion =
+	val (Goal (lants) (TImply A1 B1)) = lemma 
+in    val (TImply A2 B2) = assertion 
+in    let env = unifyBexprOfTrFormLs (tbl_create 100) [(trajFormNormalize A1,trajFormNormalize A2),(trajFormNormalize B1,trajFormNormalize B2)] 
+then
+    	let bsubsInst = map
+        	(\pair. val (bx, v) = pair 			in
+            val str=bget_variable bx 			in
+            (str, v )) ((tbl_values env) catch []) 
+in
+    	let antsInsts = map (bsubstitute bsubsInst)  lants 
+in	let bexprL2str bL = (itlist (\b. \str. (bexpr2str  20000 b)^",\n"^str) bL "") 
+in   	let syntaxCmp = bexprSubsetLL bants antsInsts 
+in    let result = (let boolAnt=itlist (\b.\v. b AND v) (bexpr2bdd [] bants) T 		in
+                	let boolLAnt=itlist (\b.\v. b AND v) (bexpr2bdd [] antsInsts) T 		in
+                (boolAnt ==> boolLAnt)) 
+in
+  	syntaxCmp => T | result
+;
+
+
+//******************************************************************************************************************************************
+//Rule: steSymReduce
+//symmetry reduction
+
+let symReduceGoalf ckt goal inpSel =
+    	val (Goal bants assert) = goal 
+in	val (useLemma storedGoal isCutPoint) = inpSel 
+in    val (Goal sbants sassert) = storedGoal 
+in    val (TImply ant cons) = assert 
+in    val (TImply sant scons) = sassert 
+in   	val env = matchTrFormLs (tbl_create 10) [(cons,scons)] 
+in    val (T,symF) = symAnalz ckt (tbl_values env) isCutPoint (tbl_create 10)
+in
+	printBiTab (tbl_values symF)
+fseq 
+      val assert0 = (tbl_empty symF) => assert
+                	 |	val symCopy = (tbl_copy symF) 						then           
+                  	let checked = checkBiJection1 symF (tbl_keys symF) symCopy 		in
+                  	let symF1 = snd checked 							in
+                  	(val ant0 = (symTransform symF1 ant) 	in
+                   	val cons0 = (symTransform symF1 cons) 	in
+                   	(TImply ant0 cons0)) 
+in
+   	(useLemmaOk storedGoal  (bants) (assert0)) => []
+|	error "lemma cann't be applied"
+;
+
+let steSymReduce lemma isCutPoint i st = subgoal symReduceGoalf i st (useLemma lemma isCutPoint);
+
+
+//******************************************************************************************************************************************
+//some operators for case study
+
+let ! xs i=el (i+1) xs; //element of a list
+
+infix 6 !;
+
+let bvAre ns bls=TAndList //assign the value of a line
+(map (\pair.Isb (snd pair) (fst pair) ) (zip ns bls));
+
+infix 6 bvAre;
+
+let memAre mem bvsOfMem= //assign the vaue of the memory
+TAndList
+(map (\pair. (fst pair) bvAre (snd pair)) (zip mem bvsOfMem));
+
+infix 6 memAre;
+
+let boolAndLs bs=itlist (\e.\b. e bAND b) bs bT;
+let boolOrLs bs=itlist (\e.\b. e bOR b) bs bF;
+let bvEq l1 l2=boolAndLs (map (\(a,b). a bXNOR b) (zip l1 l2));
+let bvNeq l1 l2=boolOrLs (map (\(a,b). a bXOR b) (zip l1 l2));
+
+infix 9 bvEq;
+infix 9 bvNeq;
+
+
+//******************************************************************************************************************************************
+//some tacticals of the theorem prover
+
+lettype modeType = prove | nonProve;
+
+let cur_mode=ref nonProve;
+
+let lemmTabs=ref [];
+
+let cur_fsm=ref (load_exe "cam.exe");
+
+let cur_state=ref ( State (deref cur_fsm )[]);
+
+let cur_goal=ref  (Goal [] (TImply (TAndList [])(TAndList [])));
+
+let cur_goal_name=ref ("");
+
+let loadModel ckt = ( cur_fsm:= ckt);
+
+let lemma goalName goal= //start to prove a lemma
+   (deref cur_mode)=nonProve =>
+   ( cur_state:= ( State (deref cur_fsm) [goal]) ) fseq
+   ( cur_mode:=  prove) fseq 
+   (cur_goal:=  goal) fseq 
+    (cur_goal_name:=goalName) 
+| error "error";
+
+let done i = //store the lemma to lemma table
+    val (State ckt remainder)=(deref  cur_state) in
+    ((deref cur_mode)=prove )  AND ((remainder =[])) => 
+	(lemmTabs:= ((deref cur_goal_name),(deref cur_goal)):(deref lemmTabs)) fseq
+         (cur_mode:= nonProve)
+|   error "error";
+
+non_lazy done;
+
+let by tac= //apply a rule
+   cur_state:=tac 1 (deref cur_state);
+
+   
+let byTactical tact=
+   cur_state:=tact (deref cur_state);
+
+letrec forTac (i:iList) TacPara st= //repeatly use some rules to verify subgoals
+  (print ("\n"^(int2str i)^"\n")) 	 
+fseq 	(forTac iList TacPara (TacPara i st))
+/\ forTac [] TacPara st = st;   
+
+let testDone i = //test whether the goal list is empty
+	val (State ckt goalist) = (deref cur_state)
+in	
+	(goalist = []) => "current state is done!\n"
+|	"there are still "^(int2str (length goalist))^" goals remain\n"
+;
+
+non_lazy testDone;
