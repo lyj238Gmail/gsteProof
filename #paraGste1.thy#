@@ -1,4 +1,4 @@
-theory paraGste1 imports Main Finite_Set "~~/src/HOL/Word/Word"
+theory paraGste1 imports Main 
 begin
 
 section{*Variables and values*}

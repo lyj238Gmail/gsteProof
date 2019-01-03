@@ -104,24 +104,10 @@ assumes a1:"f \<in> invariants " and a2: "formEval J (initSpec0) s"
 shows "formEval J f s "
 using a1 a2 by auto
 
-lemma consistentGcd: 
-  shows " consistent  J invariants {initSpec0} rules"
-  using consistent_def iniImply_inv invs_on_rules by blast 
+lemma consistentGcd: "consistent J invariants {initSpec0} s" 
+proof(unfold consistent_def)
 
-
-lemma gcdInv:
-  assumes  a2:"s \<in> reachableSet J {initSpec0}  rules" 
-  shows "\<forall> inv. inv \<in> invariants \<longrightarrow>formEval J inv s"  (is "?P s")
-  using assms consistentGcd consistentLemma by blast
-  
-end
-(*proof(unfold consistent_def,rule conjI)
-  show "\<forall>inv ini s. inv \<in> invariants \<longrightarrow> ini \<in> {initSpec0} \<longrightarrow> formEval J ini s \<longrightarrow> formEval J inv s"
-    using iniImply_inv by blast
-    
-  next
-
-    show "\<forall>inv r sa. inv \<in> invariants \<longrightarrow> r \<in> s \<longrightarrow> invHoldForRule J sa inv r invariants "
-      using
-
-  done*)
+lemma consistentLemma:
+  assumes a1:"consistent I invs inis rs" and a2:"s \<in> reachableSet I inis rs" 
+  shows "\<forall> inv. inv \<in> invs \<longrightarrow>formEval I inv s"  (is "?P s")
+   
