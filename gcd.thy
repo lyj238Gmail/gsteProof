@@ -115,13 +115,3 @@ lemma gcdInv:
   using assms consistentGcd consistentLemma by blast
   
 end
-(*proof(unfold consistent_def,rule conjI)
-  show "\<forall>inv ini s. inv \<in> invariants \<longrightarrow> ini \<in> {initSpec0} \<longrightarrow> formEval J ini s \<longrightarrow> formEval J inv s"
-    using iniImply_inv by blast
-    
-  next
-
-    show "\<forall>inv r sa. inv \<in> invariants \<longrightarrow> r \<in> s \<longrightarrow> invHoldForRule J sa inv r invariants "
-      using
-
-  done*)
