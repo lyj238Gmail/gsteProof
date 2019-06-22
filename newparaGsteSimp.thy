@@ -68,16 +68,17 @@ definition read::"varType \<Rightarrow> nat \<Rightarrow>expType \<Rightarrow>ex
 
               
 section{*assignment, statement, general statement*}
-type_synonym assignType=  "varType \<times>   expType"
+
+ 
+type_synonym assignType=  "varType \<times> nat\<times>  expType \<times> expType" 
+(*a\<times>bound \<times>index \<times>content a[ie] = c where ie \<le> bound*)
 
 text{*A statement is is just a lists of assignments, but these assignments
  are extecuted in parallel, \emph{not} in a sequential order*}
 
 (*datatype statement=  assign assignType    *)
 
-datatype statement=  parallel "assignType  list" | writeS  nat varType expType expType
- 
-
+datatype statement=  parallel "assignType  list" 
 
 text{*A parameterized statement is just a function from a parameter to a statement. 
 For convenience, we also define the concatation of statements, and use it to define 
@@ -85,19 +86,8 @@ the $\mathsf{forall}$ statement.*}
 
 type_synonym paraStatement= "nat \<Rightarrow> statement"
 
- 
 
 
-text{*A state transition from a state to another sate, which is caused by an execution of a statement, is
- defined as follows:*}
-
-
-primrec statement2Assigns::"statement \<Rightarrow> assignType list" where
-"statement2Assigns (parallel  S)=S"
-
-primrec valOf::"assignType list \<Rightarrow> varType =>expType"  where
-"valOf [] v=IVar v" |
-"valOf (x#xs) v= (if ((fst x) =v) then (snd x) else valOf xs v)"
 
 
 datatype rule =  guard formula  statement
@@ -161,7 +151,6 @@ definition varsOfVar::" varType \<Rightarrow> varType set"  where  [simp]:
 " varsOfVar x  = {x}" 
 
 
-
 type_synonym scalrValueTypeListFun="scalrValueType list \<Rightarrow> scalrValueType"
 
 type_synonym interpretFunType="string \<Rightarrow> scalrValueTypeListFun"
@@ -171,12 +160,19 @@ type_synonym scalrValueTypeListPred="scalrValueType list \<Rightarrow> bool"
 type_synonym interpretPredType="string \<Rightarrow> scalrValueTypeListPred"
 
 primrec scalar2Bool::"scalrValueType\<Rightarrow>bool" where
-" scalar2Bool (index b) =( \<not>(b=0))"(*
-|"scalar2Bool (index i) =False"
-|"scalar2Bool (enum a s)=False"*)
+" scalar2Bool (index b) =( \<not>(b=0))" 
 
 primrec getVal::"scalrValueType\<Rightarrow>nat" where
 "getVal (index n) = n"
+
+text{*A state transition from a state to another sate, which is caused by an execution of 
+a statement, is  defined as follows:*}
+
+
+primrec statement2Assigns::"statement \<Rightarrow> assignType list" where
+"statement2Assigns (parallel  S)=S"
+
+
 
 text{*The formal semantics of an expression and a formula is formalized as follows:*}
 primrec expEval :: "interpretFunType \<Rightarrow> expType \<Rightarrow> state \<Rightarrow> scalrValueType" and 
@@ -200,8 +196,13 @@ evalOr: "formEval I (orForm f1 f2) s=( (formEval I f1 s) \<or>  (formEval I f2 s
 evalImp:"formEval I (implyForm f1 f2) s= ( (formEval I f1 s) \<longrightarrow>  (formEval I f2 s))" |
 "formEval I chaos s=True"
 
+(*primrec valOf::"interpretFunType\<Rightarrow> state \<Rightarrow>assignType list \<Rightarrow> varType => scalrValueType"  where
+"valOf I s [] v=s v" |
+"valOf I s (x#xs) v= (if ((fst x) =v) then (expEval I (snd x) s) else valOf I s xs )"*)
+(*a\<times>bound \<times>index \<times>content a[ie] = c where ie \<le> bound*)  
+definition paraNameOfAssign ::"assignType \<Rightarrow> varType" where
+"paraNameOfAssign asgn= fst asgn"
 
-  
 primrec transAux:: "assignType list \<Rightarrow>interpretFunType \<Rightarrow> state \<Rightarrow>state " where
 "transAux [] I s= s " |
 "transAux (pair#asgns) I s=( transAux asgns I s) ((fst pair):= expEval I (snd pair) s) "
