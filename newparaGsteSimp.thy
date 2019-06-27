@@ -73,6 +73,18 @@ section{*assignment, statement, general statement*}
 type_synonym assignType=  "varType \<times> nat\<times>  expType \<times> expType" 
 (*a\<times>bound \<times>index \<times>content a[ie] = c where ie \<le> bound*)
 
+definition paraNameOfAssign:: "assignType \<Rightarrow> varType" where
+"paraNameOfAssign des \<equiv> fst des"
+
+definition boundOfAssign:: "assignType \<Rightarrow> nat" where
+"boundOfAssign des \<equiv> fst (snd des)"
+
+definition leftIndexOfAssign:: "assignType \<Rightarrow> expType" where
+"leftIndexOfAssign des \<equiv> fst (snd (snd des))"
+
+definition rightOfAssign:: "assignType \<Rightarrow> expType" where
+"rightOfAssign des \<equiv> snd (snd (snd des))"
+
 text{*A statement is is just a lists of assignments, but these assignments
  are extecuted in parallel, \emph{not} in a sequential order*}
 
@@ -85,9 +97,6 @@ For convenience, we also define the concatation of statements, and use it to def
 the $\mathsf{forall}$ statement.*}
 
 type_synonym paraStatement= "nat \<Rightarrow> statement"
-
-
-
 
 
 datatype rule =  guard formula  statement
@@ -196,18 +205,45 @@ evalOr: "formEval I (orForm f1 f2) s=( (formEval I f1 s) \<or>  (formEval I f2 s
 evalImp:"formEval I (implyForm f1 f2) s= ( (formEval I f1 s) \<longrightarrow>  (formEval I f2 s))" |
 "formEval I chaos s=True"
 
-(*primrec valOf::"interpretFunType\<Rightarrow> state \<Rightarrow>assignType list \<Rightarrow> varType => scalrValueType"  where
-"valOf I s [] v=s v" |
-"valOf I s (x#xs) v= (if ((fst x) =v) then (expEval I (snd x) s) else valOf I s xs )"*)
+primrec getIndexOfExp::"expType \<Rightarrow> nat" where
+"getIndexOfExp (Const i) =getVal i"
+
+
+primrec valOf::" assignType list \<Rightarrow> varType =>nat\<Rightarrow>expType\<Rightarrow> expType"  where
+"valOf   [] v bound indexE =IVar v
+  " |
+"valOf   (x#xs) v bound indexE= 
+  (if ((paraNameOfAssign x) =v) \<and> (boundOfAssign x =0)   
+  then (rightOfAssign x) 
+  else (iteForm 
+        (andForm (andForm (eqn (IVar v) (IVar (paraNameOfAssign x)))  (eqn (Const (index bound)) (Const (index (boundOfAssign x)))))
+            (eqn  (leftIndexOfAssign x) indexE))
+        (rightOfAssign x)
+        ( valOf  xs v  bound indexE)))"
+(*  else (if ((Para (paraNameOfAssign x) (getIndexOfExp (leftIndexOfAssign x))))= v 
+        then (rightOfAssign x)
+       else valOf  xs v ))"*)
 (*a\<times>bound \<times>index \<times>content a[ie] = c where ie \<le> bound*)  
-definition paraNameOfAssign ::"assignType \<Rightarrow> varType" where
-"paraNameOfAssign asgn= fst asgn"
 
-primrec transAux:: "assignType list \<Rightarrow>interpretFunType \<Rightarrow> state \<Rightarrow>state " where
-"transAux [] I s= s " |
-"transAux (pair#asgns) I s=( transAux asgns I s) ((fst pair):= expEval I (snd pair) s) "
 
-definition trans:: "statement \<Rightarrow> interpretFunType \<Rightarrow> state \<Rightarrow>state " where [simp]:
+primrec transAux:: "assignType list \<Rightarrow>interpretFunType \<Rightarrow> state \<Rightarrow>bool\<times>state " where
+"transAux [] I s= (True,s )" |
+"transAux (asgn#asgns) I s=
+  (let result=( transAux asgns I s) in
+    if \<not>(fst result) then (False,s)
+    else  
+  (if (boundOfAssign asgn =0) then
+    (True,  (snd result) ((paraNameOfAssign asgn):= expEval I ( rightOfAssign asgn) s) )
+  else
+    (let i=getVal (expEval I (leftIndexOfAssign asgn) s) in
+    (if  i\<le> (boundOfAssign asgn)
+    then (
+           (True,(snd result)((Para (paraNameOfAssign asgn) i) := expEval I ( rightOfAssign asgn) s))
+          )
+    else  (False,s)
+  )))) "
+
+definition trans:: "statement \<Rightarrow> interpretFunType \<Rightarrow> state \<Rightarrow>bool \<times> state " where [simp]:
 "trans S I s \<equiv> transAux ( statement2Assigns S) I s"
 
 
@@ -222,8 +258,8 @@ inductive_set reachableSet::" interpretFunType \<Rightarrow> formula set\<Righta
 
 initState:  "\<lbrakk>formEval  I ini s; ini \<in>  inis\<rbrakk>  \<Longrightarrow>(  s \<in>  ( reachableSet I inis rules))" |
 
-oneStep:    " \<lbrakk>s \<in>  reachableSet I inis rules ;
-               r \<in>   rules ;formEval I (pre r ) s \<rbrakk> \<Longrightarrow>  trans  (act r ) I s  \<in>  reachableSet I inis rules"
+oneStep:    " \<lbrakk>s \<in>  reachableSet I inis rules ;(fst (trans  (act r ) I s));
+               r \<in>   rules ;formEval I (pre r ) s \<rbrakk> \<Longrightarrow>   (snd  (trans  (act r ) I s )) \<in>  reachableSet I inis rules"
 
 
 
@@ -245,6 +281,9 @@ substExpite: "substExp  (iteForm f e1 e2)  asgns= (iteForm (substForm f asgns) (
 
 substUif: "substExp (uif f es) asgns =( uif f (map (\<lambda>e. substExp e asgns) es))"| 
 
+
+substReadE:"substExp   (readE bound a e) asgns=  readE bound a  (substExp e asgns)"|
+
 "substForm (eqn l r)  asgns=(eqn (substExp l  asgns) (substExp r  asgns))"  |
 "substForm ( andForm f1 f2)  asgns =   ( andForm (substForm f1  asgns)  (substForm f2  asgns))"|
 "substForm (neg f1 )   asgns= (neg ( substForm f1  asgns ))"|
@@ -252,6 +291,8 @@ substUif: "substExp (uif f es) asgns =( uif f (map (\<lambda>e. substExp e asgns
 "substForm (implyForm f1 f2)   asgns= (implyForm (substForm f1 asgns)  (substForm f2  asgns))" |
 "substForm (uip p es)   asgns= ( uip p (map (\<lambda>e. substExp e asgns) es))" |
 "substForm  chaos   asgns=chaos"
+
+
 
 
 

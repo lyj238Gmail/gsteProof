@@ -577,6 +577,7 @@ abbreviation invHoldForRule::"interpretFunType\<Rightarrow>state \<Rightarrow>fo
   "invHoldForRule I s inv0 r invs \<equiv>
     invHoldForRule1 I s inv0 r \<or>  invHoldForRule2 I s inv0 r \<or>   invHoldForRule3 I s inv0 r invs "
 
+
 text{*The relation $\mathsf{invHoldRule}(s, f,r,fs)$ defines a causality relation
 between $f$, $r$, and $fs$, which guarantees that if each formula in $fs$ holds
 before the execution of rule $r$, then $f$ holds after the execution of rule $r$.
@@ -597,6 +598,18 @@ definition consistent::"interpretFunType\<Rightarrow>formula set \<Rightarrow> f
  (\<forall> inv r s.  (inv \<in>invs  \<longrightarrow> r \<in> rs \<longrightarrow> invHoldForRule I s inv r invs  ))"   
 
 
+definition  invHoldForRule4::"interpretFunType\<Rightarrow>state \<Rightarrow> formula \<Rightarrow> rule \<Rightarrow>formula set\<Rightarrow> bool"  where [simp]:
+"invHoldForRule4 I s f r fs  \<equiv>  
+(\<exists>fs'. fs' \<subseteq> fs \<and>  ((\<forall> f'. f'\<in>(fs' \<union> {pre r}) \<longrightarrow>formEval  I   f' s)\<longrightarrow> formEval I (preCond1 f  (act r))  s))"  
+
+
+abbreviation invHoldForRule'::"interpretFunType\<Rightarrow>state \<Rightarrow>formula \<Rightarrow> rule \<Rightarrow> (formula set) \<Rightarrow> bool" where
+  "invHoldForRule' I s inv0 r invs \<equiv>
+    invHoldForRule1 I s inv0 r \<or>  invHoldForRule2 I s inv0 r \<or>   invHoldForRule4 I s inv0 r invs "
+
+
+text{*$\mathsf{invHoldRule}_3(s,f, r,fs)$ states that there exists another invariant $f' \in fs$ such that
+  the conjunction of the guard of $r$ and $f'$ implies the precondition  $\mathsf{preCond}(S,f)$.*}
 
 
 lemma consistentLemma:
@@ -677,8 +690,90 @@ lemma consistentLemma:
      qed
  qed  
 
+definition consistent'::"interpretFunType\<Rightarrow>formula set \<Rightarrow> formula set \<Rightarrow> rule set \<Rightarrow>bool"  where [simp]:
+"consistent' I invs inis rs \<equiv>
+(\<forall>inv ini s. (inv \<in> invs \<longrightarrow> ini\<in> inis\<longrightarrow> formEval I ini s \<longrightarrow> formEval I inv s)) \<and>
+ (\<forall> inv r s.  (inv \<in>invs  \<longrightarrow> r \<in> rs \<longrightarrow> invHoldForRule' I s inv r invs  ))"   
+  
 
-    
+lemma consistentLemma':
+  assumes a1:"consistent' I invs inis rs" and a2:"s \<in> reachableSet I inis rs" 
+  shows "\<forall> inv. inv \<in> invs \<longrightarrow>formEval I inv s"  (is "?P s")
+  using a2
+  proof induct
+    case (initState ini s)
+    show "?P s"
+      apply(cut_tac a1, unfold consistent'_def)
+      by (metis (lifting) initState(1) initState(2))
+  next
+    case (oneStep s r)
+    show "?P  (trans  (act r) I s)"    
+    proof (rule allI, rule impI)
+      fix inv
+      assume b1:"inv \<in> invs"
+      have b2:" invHoldForRule4 I s inv r  invs \<or> invHoldForRule2 I s inv r   \<or> invHoldForRule1 I s inv r  "
+        apply(cut_tac a1, unfold consistent'_def)
+        by (metis b1 oneStep(3))
+        
+     moreover
+      { assume c1:"invHoldForRule4 I s inv r invs"
+        
+        let ?pref="preCond1 inv (act r)"
+          have b3:"  ( (\<forall> f'.  f' \<in>  invs\<longrightarrow>formEval I f'  s) \<longrightarrow>formEval I (pre r)  s\<longrightarrow> formEval I  ?pref s)  "  (is " ?P fs ")
+           apply (cut_tac c1, unfold invHoldForRule4_def,auto)
+          done
+
+        then have b3':"?P fs  "
+          by blast
+
+        have b4:" (\<forall> f'.  f' \<in>  invs\<longrightarrow>formEval I f'  s)"
+          apply(cut_tac b3' )
+          by (metis (no_types) oneStep(2))
+
+        have b5:"formEval I (pre r) s"
+          by (metis (lifting) oneStep(4))
+
+        have b6:"formEval I ?pref s"
+         by(cut_tac b4 b5 b3', auto)
+
+        have "formEval I inv (trans (act r) I s)"
+          using b6 lemmaOnPre by blast
+      }
+     
+     moreover
+      {assume b1':"invHoldForRule2 I s inv r "
+        have b2:"formEval I inv s"
+        by (metis b1 oneStep.hyps(2))
+        
+        let ?pref="preCond1 inv (act r)"
+        have b3:" (  formEval I ?pref s  =  formEval I inv s)"
+        by(cut_tac b1',unfold  invHoldForRule2_def,simp)
+        
+        with b2 have b4:"formEval I ?pref s"
+          by auto
+          
+        have "formEval I inv (trans (act r) I s)"
+          using b2 b3 lemmaOnPreForm by auto
+         
+      }
+      moreover
+      {assume b1':"invHoldForRule1 I s inv r "
+         
+         have b5:"formEval I (pre r) s"
+          by (metis (lifting) oneStep(4))
+        
+         have "formEval I inv (trans (act r) I s)"
+           apply(subgoal_tac "formEval I (preCond1 inv (act r) ) s")
+           apply (simp add: lemmaOnPre)
+           apply(cut_tac b1' b5)
+           by(unfold invHoldForRule1_def,auto)
+       
+       }
+       ultimately show "formEval I inv (trans (act r) I s)"
+         by blast
+     qed
+ qed  
+
 subsection{*more lemmas on valOf operator*}
 
 text{*more lemmas on valOf operator*}
