@@ -22,7 +22,7 @@ datatype expType= IVar varType |
          iteForm formula  expType  expType |
          uif string "expType list" |
          top |unKnown |
-         readE  nat varType expType 
+         readE  varType expType (*readE  nat varType expType *)
 
 
 and 
@@ -70,31 +70,39 @@ definition read::"varType \<Rightarrow> nat \<Rightarrow>expType \<Rightarrow>ex
 section{*assignment, statement, general statement*}
 
  
-type_synonym assignType=  "varType \<times> nat\<times>  expType \<times> expType" 
-(*a\<times>bound \<times>index \<times>content a[ie] = c where ie \<le> bound*)
+datatype assignType=  simpAssign "varType \<times>  expType"  | compAssign "varType \<times>  expType \<times> expType" 
+(*don't use a\<times>bound \<times>index \<times>content a[ie] = c where ie \<le> bound
+only use a \<times>index \<times>content a[ie] := c *)
 
-definition paraNameOfAssign:: "assignType \<Rightarrow> varType" where
-"paraNameOfAssign des \<equiv> fst des"
+primrec paraNameOfAssign:: "assignType \<Rightarrow> varType" where
+"paraNameOfAssign (simpAssign des) = fst des"|
+"paraNameOfAssign (compAssign des) = fst des"
 
-definition boundOfAssign:: "assignType \<Rightarrow> nat" where
-"boundOfAssign des \<equiv> fst (snd des)"
+primrec leftIndexOfAssign:: "assignType \<Rightarrow> expType" where
+"leftIndexOfAssign (compAssign des) = fst (snd des)" |
+"leftIndexOfAssign (simpAssign des) = Const (index 0)"
 
-definition leftIndexOfAssign:: "assignType \<Rightarrow> expType" where
-"leftIndexOfAssign des \<equiv> fst (snd (snd des))"
 
-definition rightOfAssign:: "assignType \<Rightarrow> expType" where
-"rightOfAssign des \<equiv> snd (snd (snd des))"
+(*definition leftIndexOfAssign:: "assignType \<Rightarrow> expType" where
+"leftIndexOfAssign des \<equiv> fst (snd (snd des))"*)
+
+primrec rightOfAssign:: "assignType \<Rightarrow> expType" where
+"rightOfAssign (compAssign des) =  (snd (snd des))" |
+"rightOfAssign (simpAssign des) =  ( (snd des))"
+
+
+primrec isSimpAssign:: "assignType \<Rightarrow> bool" where
+"isSimpAssign (compAssign des) = False" |
+"isSimpAssign (simpAssign des) = True"
 
 text{*A statement is is just a lists of assignments, but these assignments
- are extecuted in parallel, \emph{not} in a sequential order*}
+ are extecuted in parallel,  in a sequential order*}
 
 (*datatype statement=  assign assignType    *)
 
 datatype statement=  parallel "assignType  list" 
 
-text{*A parameterized statement is just a function from a parameter to a statement. 
-For convenience, we also define the concatation of statements, and use it to define 
-the $\mathsf{forall}$ statement.*}
+
 
 type_synonym paraStatement= "nat \<Rightarrow> statement"
 
@@ -122,7 +130,7 @@ text{*Variables of a variable, an expression, a formula, and a statement is defi
 varsOfVar, varOfExp, varOfForm and varOfSent respectively*}
 
 
-primrec varOfExp::"expType \<Rightarrow> varType list"  and
+(*primrec varOfExp::"expType \<Rightarrow> varType list"  and
   varOfForm::"formula \<Rightarrow> varType list"  where 
 
 "varOfExp  (IVar v) = [ v]" |
@@ -132,7 +140,7 @@ primrec varOfExp::"expType \<Rightarrow> varType list"  and
 "varOfExp   (uif f es) = (concat (map varOfExp es))"|
 "varOfExp   (top) =  []" |
 "varOfExp   (unKnown) =  []" |
-"varOfExp   (readE bound  a e) =  map (\<lambda> i. Para a i) (upt 0 bound)" |
+"varOfExp   (readE   a e) =  map (\<lambda> i. Para a i) (upt 0 bound)" |
 
 "varOfForm   (eqn e1 e2) = ( (varOfExp   e1 )  @   (varOfExp  e2))" |
 "varOfForm   ( andForm f1 f2) =(  (varOfForm  f1 ) @  (varOfForm  f2 ))"|
@@ -140,7 +148,7 @@ primrec varOfExp::"expType \<Rightarrow> varType list"  and
 "varOfForm   (orForm f1 f2) =(  (varOfForm   f1 )   @   (varOfForm  f2 ))"|
 "varOfForm   (implyForm f1 f2) = (  (varOfForm  f1 ) @ (varOfForm f2 ))"|
 "varOfForm   (uip p es) = (concat (map varOfExp es))"|
-"varOfForm   (chaos) =[]"
+"varOfForm   (chaos) =[]"*)
  
 
 (*primrec  varOfSent::"statement \<Rightarrow> varType list" where
@@ -195,7 +203,7 @@ primrec expEval :: "interpretFunType \<Rightarrow> expType \<Rightarrow> state \
 "expEval I top  s= topVal"|
 "expEval I unKnown s=bottomVal" |
 "expEval I  (uif f es)  s=   (I f) (map (\<lambda> e. expEval  I e s) es) " |
-"expEval I (readE bound a e) s=  s (Para a (getVal (expEval I e s)))"|
+"expEval I (readE  a e) s=  s (Para a (getVal (expEval I e s)))"|
 
 evalExp: "formEval I (eqn e1 e2) s= ((expEval I e1 s) = (expEval I e2 s))" |
 "formEval I  (uip p es)  s=    scalar2Bool ( (I p) (map (\<lambda> e. expEval  I e s) es)) " |
@@ -209,41 +217,37 @@ primrec getIndexOfExp::"expType \<Rightarrow> nat" where
 "getIndexOfExp (Const i) =getVal i"
 
 
-primrec valOf::" assignType list \<Rightarrow> varType =>nat\<Rightarrow>expType\<Rightarrow> expType"  where
-"valOf   [] v bound indexE =IVar v
-  " |
-"valOf   (x#xs) v bound indexE= 
-  (if ((paraNameOfAssign x) =v) \<and> (boundOfAssign x =0)   
-  then (rightOfAssign x) 
+primrec valOf::" assignType list \<Rightarrow> varType \<Rightarrow>expType\<Rightarrow> expType"  where
+"valOf   [] v  indexE =IVar v " |
+"valOf   (x#xs) v  indexE= 
+  (if (isSimpAssign x)   
+  then (if (paraNameOfAssign x) =v then  rightOfAssign x else valOf  xs v   indexE ) 
   else (iteForm 
+         (andForm (eqn (IVar v) (IVar (paraNameOfAssign x))) (eqn  (leftIndexOfAssign x) indexE))
+        (rightOfAssign x)
+        ( valOf  xs v   indexE)))"
+  (*else (iteForm 
         (andForm (andForm (eqn (IVar v) (IVar (paraNameOfAssign x)))  (eqn (Const (index bound)) (Const (index (boundOfAssign x)))))
             (eqn  (leftIndexOfAssign x) indexE))
         (rightOfAssign x)
-        ( valOf  xs v  bound indexE)))"
+        ( valOf  xs v  bound indexE)))"*)
 (*  else (if ((Para (paraNameOfAssign x) (getIndexOfExp (leftIndexOfAssign x))))= v 
         then (rightOfAssign x)
        else valOf  xs v ))"*)
 (*a\<times>bound \<times>index \<times>content a[ie] = c where ie \<le> bound*)  
 
 
-primrec transAux:: "assignType list \<Rightarrow>interpretFunType \<Rightarrow> state \<Rightarrow>bool\<times>state " where
-"transAux [] I s= (True,s )" |
+primrec transAux:: "assignType list \<Rightarrow>interpretFunType \<Rightarrow> state \<Rightarrow>state " where
+"transAux [] I s= s " |
 "transAux (asgn#asgns) I s=
   (let result=( transAux asgns I s) in
-    if \<not>(fst result) then (False,s)
-    else  
-  (if (boundOfAssign asgn =0) then
-    (True,  (snd result) ((paraNameOfAssign asgn):= expEval I ( rightOfAssign asgn) s) )
-  else
-    (let i=getVal (expEval I (leftIndexOfAssign asgn) s) in
-    (if  i\<le> (boundOfAssign asgn)
-    then (
-           (True,(snd result)((Para (paraNameOfAssign asgn) i) := expEval I ( rightOfAssign asgn) s))
-          )
-    else  (False,s)
-  )))) "
+   let i=getVal (expEval I (leftIndexOfAssign asgn) s) in
+       if (isSimpAssign asgn) then
+       result(( (paraNameOfAssign asgn) ) := expEval I ( rightOfAssign asgn) s)
+       else 
+       result((Para (paraNameOfAssign asgn) i) := expEval I ( rightOfAssign asgn) s)) "
 
-definition trans:: "statement \<Rightarrow> interpretFunType \<Rightarrow> state \<Rightarrow>bool \<times> state " where [simp]:
+definition trans:: "statement \<Rightarrow> interpretFunType \<Rightarrow> state \<Rightarrow> state " where [simp]:
 "trans S I s \<equiv> transAux ( statement2Assigns S) I s"
 
 
@@ -258,8 +262,8 @@ inductive_set reachableSet::" interpretFunType \<Rightarrow> formula set\<Righta
 
 initState:  "\<lbrakk>formEval  I ini s; ini \<in>  inis\<rbrakk>  \<Longrightarrow>(  s \<in>  ( reachableSet I inis rules))" |
 
-oneStep:    " \<lbrakk>s \<in>  reachableSet I inis rules ;(fst (trans  (act r ) I s));
-               r \<in>   rules ;formEval I (pre r ) s \<rbrakk> \<Longrightarrow>   (snd  (trans  (act r ) I s )) \<in>  reachableSet I inis rules"
+oneStep:    " \<lbrakk>s \<in>  reachableSet I inis rules ;
+               r \<in>   rules ;formEval I (pre r ) s \<rbrakk> \<Longrightarrow>   (  (trans  (act r ) I s )) \<in>  reachableSet I inis rules"
 
 
 
@@ -269,7 +273,7 @@ section{*substitution, weakest precondition*}
 primrec substExp :: "expType\<Rightarrow> assignType list \<Rightarrow>expType"  and 
 substForm ::"formula \<Rightarrow> assignType list \<Rightarrow> formula" where 
 
-substExpVar: "substExp  (IVar v') asgns=   (valOf  asgns v')  "| 
+substExpVar: "substExp  (IVar v') asgns=   (valOf  asgns v'  (Const (index 0)))  "| 
 
 substExpConst: "substExp  (Const i)  asgns= Const i" |
 
@@ -282,7 +286,7 @@ substExpite: "substExp  (iteForm f e1 e2)  asgns= (iteForm (substForm f asgns) (
 substUif: "substExp (uif f es) asgns =( uif f (map (\<lambda>e. substExp e asgns) es))"| 
 
 
-substReadE:"substExp   (readE bound a e) asgns=  readE bound a  (substExp e asgns)"|
+substReadE:"substExp   (readE  a e) asgns=  (valOf  asgns a  e)"|
 
 "substForm (eqn l r)  asgns=(eqn (substExp l  asgns) (substExp r  asgns))"  |
 "substForm ( andForm f1 f2)  asgns =   ( andForm (substForm f1  asgns)  (substForm f2  asgns))"|
@@ -293,9 +297,6 @@ substReadE:"substExp   (readE bound a e) asgns=  readE bound a  (substExp e asgn
 "substForm  chaos   asgns=chaos"
 
 
-
-
-
 primrec  preCond1 ::" formula \<Rightarrow> statement  \<Rightarrow>formula" where
 "preCond1 f ( parallel  S)  = substForm f S " 
 
@@ -304,25 +305,34 @@ primrec  preExp1 ::" expType \<Rightarrow>  statement  \<Rightarrow>expType" whe
 "preExp1 e  (parallel  S)  = substExp e S"
 
 
-lemma lemmaOnValOf:  shows "expEval I (preExp1 (IVar v) nf) s = trans nf I s v" 
+lemma lemmaOnValOf:  shows "expEval I (preExp1 (IVar v) nf) s = ( (trans nf I s)) v" 
   (is "?LHS1 nf =?RHS1 nf ")
 proof(induct_tac nf)
   fix x
   let ?nf="parallel x"
   show "?LHS1 ?nf=?RHS1 ?nf"
-  proof(auto)
-  show "expEval I (valOf x v) s = transAux x I  s v"
-     (is "?LHS2 x =?RHS2 x ")
-  proof(induct_tac x)
-  show "?LHS2 [] =?RHS2 []"
-       by auto
-    next
-  fix a nf
-  assume b1:"?LHS2 nf =?RHS2 nf"
-  let ?nf="a#nf"
-  show "?LHS2 ?nf =?RHS2 ?nf"
-  apply(cut_tac b1,simp) done
-  qed
+  proof(induct_tac x )
+      show "?LHS1 (parallel []) =?RHS1 (parallel [])"
+        by auto
+      next
+      fix a list
+      assume b1:"?LHS1 (parallel list) =?RHS1 (parallel list) "
+      let ?nf="a#list"
+      show "?LHS1 (parallel ?nf) =?RHS1 (parallel ?nf)"
+      proof(case_tac "(paraNameOfAssign a) =v \<and> (leftIndexOfAssign a) =Const (index 0)")
+        assume c1:"paraNameOfAssign a = v \<and> leftIndexOfAssign a = Const (index 0)"
+        show "?LHS1 (parallel ?nf) =?RHS1 (parallel ?nf)"
+        proof(case_tac a)
+          fix x1
+          assume d1:"a= simpAssign x1"
+          show "?LHS1 (parallel ?nf) =?RHS1 (parallel ?nf)"
+            apply(cut_tac c1 d1 b1,auto) done
+        next
+          fix x1
+          assume d1:"a= compAssign x1"
+          show "?LHS1 (parallel ?nf) =?RHS1 (parallel ?nf)"
+            apply(cut_tac c1 d1 b1,auto) done
+      qed
   qed
 
 qed
