@@ -8,21 +8,22 @@ According to the aforementioned discussion in section ?, firstly we define the v
 There are two kinds of variables, global and parameterized (local) 
 variables. In hardware implemetations of the protocols, 
 the variables are implenteed as registers in global or local modules. *}
-
-datatype varType=Ident  string | Para varType  nat |Field  varType   string 
+ 
 
 datatype scalrValueType= index nat   | topVal | bottomVal
 
- 
-
 section{*Expressions and Formulas*}
 
-datatype expType= IVar varType |
+datatype varType=Ident  string | Para varType  expType |
+  Field  varType   string |update varType expType
+
+
+and 
+ expType= IVar varType |
          Const scalrValueType |
          iteForm formula  expType  expType |
          uif string "expType list" |
-         top |unKnown |
-         readE  varType expType (*readE  nat varType expType *)
+         top |unKnown 
 
 
 and 
@@ -56,21 +57,12 @@ moreExForm: " existsForm (i#j#xs)  forms = orForm (forms i) (forallForm (j#xs)  
 
 type_synonym formulaExpPair="formula \<times>  expType"
 
-primrec caseExp::"formulaExpPair list  \<Rightarrow> expType" where
- caseNil: "caseExp [] = unKnown"|
- caseTail:"caseExp (gp # tls) =iteForm (fst gp) (snd gp) (caseExp tls )"
- 
- 
-
- 
-definition read::"varType \<Rightarrow> nat \<Rightarrow>expType \<Rightarrow>expType" where [simp]:
-"read a bound e \<equiv> caseExp (map (\<lambda>i. ((eqn e (Const (index i))), IVar (Para a i))) (down bound))"
 
               
 section{*assignment, statement, general statement*}
 
  
-datatype assignType=  simpAssign "varType \<times>  expType"  | compAssign "varType \<times>  expType \<times> expType" 
+datatype assignType=  simpAssign "varType \<times>  expType"   
 (*don't use a\<times>bound \<times>index \<times>content a[ie] = c where ie \<le> bound
 only use a \<times>index \<times>content a[ie] := c *)
 
