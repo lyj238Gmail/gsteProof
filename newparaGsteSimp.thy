@@ -12,11 +12,15 @@ the variables are implenteed as registers in global or local modules. *}
 
 datatype scalrValueType= index nat   | topVal | bottomVal
 
+datatype scavarType=scaIdent  string | scaPara scavarType  nat |
+  scaField  scavarType   string 
+
 section{*Expressions and Formulas*}
 
 datatype varType=Ident  string | Para varType  expType |
-  Field  varType   string |update varType expType
+  Field  varType   string 
 
+(*and arrVar=update varType expType *)
 
 and 
  expType= IVar varType |
@@ -62,11 +66,11 @@ type_synonym formulaExpPair="formula \<times>  expType"
 section{*assignment, statement, general statement*}
 
  
-datatype assignType=  simpAssign "varType \<times>  expType"   
+type_synonym assignType=   "varType \<times>  expType"   
 (*don't use a\<times>bound \<times>index \<times>content a[ie] = c where ie \<le> bound
 only use a \<times>index \<times>content a[ie] := c *)
 
-primrec paraNameOfAssign:: "assignType \<Rightarrow> varType" where
+(*primrec paraNameOfAssign:: "assignType \<Rightarrow> varType" where
 "paraNameOfAssign (simpAssign des) = fst des"|
 "paraNameOfAssign (compAssign des) = fst des"
 
@@ -85,7 +89,7 @@ primrec rightOfAssign:: "assignType \<Rightarrow> expType" where
 
 primrec isSimpAssign:: "assignType \<Rightarrow> bool" where
 "isSimpAssign (compAssign des) = False" |
-"isSimpAssign (simpAssign des) = True"
+"isSimpAssign (simpAssign des) = True"*)
 
 text{*A statement is is just a lists of assignments, but these assignments
  are extecuted in parallel,  in a sequential order*}
@@ -153,7 +157,7 @@ section{*semantics of a protocol*}
 text{*A  state of a protocol  is an instantaneous snapshot of its  behaviour given by an assignment of  values to variables of
 the circuit. Therefore, we define:*}
 
-type_synonym state= "varType \<Rightarrow> scalrValueType "
+type_synonym state= "scavarType \<Rightarrow> scalrValueType "
 
 
 definition varsOfVar::" varType \<Rightarrow> varType set"  where  [simp]:
@@ -184,10 +188,17 @@ primrec statement2Assigns::"statement \<Rightarrow> assignType list" where
 
 
 text{*The formal semantics of an expression and a formula is formalized as follows:*}
-primrec expEval :: "interpretFunType \<Rightarrow> expType \<Rightarrow> state \<Rightarrow> scalrValueType" and 
+primrec 
+desnEval :: "interpretFunType \<Rightarrow> varType \<Rightarrow> state \<Rightarrow> scavarType " and
+
+expEval :: "interpretFunType \<Rightarrow> expType \<Rightarrow> state \<Rightarrow> scalrValueType" and
+
  formEval :: "interpretFunType \<Rightarrow> formula \<Rightarrow> state \<Rightarrow>bool"  where
- 
-"expEval I  (IVar ie) s =  ( s ie)" |
+"desnEval I (Ident x) s= (scaIdent x)"|
+"desnEval I (Para v ie) s = scaPara (desnEval I v s)  (getVal (expEval I ie s))"|
+"desnEval I (Field v str) s = scaField (desnEval I v s) str" |
+
+"expEval I  (IVar ie) s =  ( s (desnEval I ie s))" |
 "expEval I (Const i) s =  i"  |
 "expEval I  (iteForm f e1 e2) s= 
    ( if (formEval I f s) then     (expEval I e1 s)
@@ -195,7 +206,6 @@ primrec expEval :: "interpretFunType \<Rightarrow> expType \<Rightarrow> state \
 "expEval I top  s= topVal"|
 "expEval I unKnown s=bottomVal" |
 "expEval I  (uif f es)  s=   (I f) (map (\<lambda> e. expEval  I e s) es) " |
-"expEval I (readE  a e) s=  s (Para a (getVal (expEval I e s)))"|
 
 evalExp: "formEval I (eqn e1 e2) s= ((expEval I e1 s) = (expEval I e2 s))" |
 "formEval I  (uip p es)  s=    scalar2Bool ( (I p) (map (\<lambda> e. expEval  I e s) es)) " |
@@ -209,15 +219,14 @@ primrec getIndexOfExp::"expType \<Rightarrow> nat" where
 "getIndexOfExp (Const i) =getVal i"
 
 
-primrec valOf::" assignType list \<Rightarrow> varType \<Rightarrow>expType\<Rightarrow> expType"  where
-"valOf   [] v  indexE =IVar v " |
-"valOf   (x#xs) v  indexE= 
-  (if (isSimpAssign x)   
+
+
+  (*(if (isSimpAssign x)   
   then (if (paraNameOfAssign x) =v then  rightOfAssign x else valOf  xs v   indexE ) 
   else (iteForm 
          (andForm (eqn (IVar v) (IVar (paraNameOfAssign x))) (eqn  (leftIndexOfAssign x) indexE))
         (rightOfAssign x)
-        ( valOf  xs v   indexE)))"
+        ( valOf  xs v   indexE)))"*)
   (*else (iteForm 
         (andForm (andForm (eqn (IVar v) (IVar (paraNameOfAssign x)))  (eqn (Const (index bound)) (Const (index (boundOfAssign x)))))
             (eqn  (leftIndexOfAssign x) indexE))
@@ -233,11 +242,7 @@ primrec transAux:: "assignType list \<Rightarrow>interpretFunType \<Rightarrow> 
 "transAux [] I s= s " |
 "transAux (asgn#asgns) I s=
   (let result=( transAux asgns I s) in
-   let i=getVal (expEval I (leftIndexOfAssign asgn) s) in
-       if (isSimpAssign asgn) then
-       result(( (paraNameOfAssign asgn) ) := expEval I ( rightOfAssign asgn) s)
-       else 
-       result((Para (paraNameOfAssign asgn) i) := expEval I ( rightOfAssign asgn) s)) "
+   result((desnEval I (fst asgn) s) := expEval I (snd asgn) s)) "
 
 definition trans:: "statement \<Rightarrow> interpretFunType \<Rightarrow> state \<Rightarrow> state " where [simp]:
 "trans S I s \<equiv> transAux ( statement2Assigns S) I s"
@@ -261,6 +266,13 @@ oneStep:    " \<lbrakk>s \<in>  reachableSet I inis rules ;
 
 
 section{*substitution, weakest precondition*}
+
+primrec valOf::"interpretFunType\<Rightarrow> state \<Rightarrow> assignType list \<Rightarrow> varType \<Rightarrow> scalrValueType"  where
+"valOf I s [] v   = (expEval I  (IVar v) s) " |
+"valOf I s (x#xs) v  = 
+  (if (desnEval I  (fst x) s=desnEval I  v s)
+  then (expEval I  (snd x) s)
+  else valOf I s xs v)"
 
 primrec substExp :: "expType\<Rightarrow> assignType list \<Rightarrow>expType"  and 
 substForm ::"formula \<Rightarrow> assignType list \<Rightarrow> formula" where 
