@@ -12,18 +12,22 @@ the variables are implenteed as registers in global or local modules. *}
 
 datatype scalrValueType= index nat   | topVal | bottomVal
 
-datatype scavarType=scaIdent  string | scaPara scavarType  nat |
-  scaField  scavarType   string 
+
 
 section{*Expressions and Formulas*}
 
-datatype varType=Ident  string | Para varType  expType |
-  Field  varType   string 
+datatype arrVarType=arrDef string nat "nat list" |
+            update arrVarType "expType list" expType 
+(*arr "a" 2 [4,4] means an array with two dimensions*)
+
+and  designator=arr arrVarType "expType list" 
+(*varType=Ident  string | Para varType  expType |
+  Field  varType   string | Update varType expType expType*)
 
 (*and arrVar=update varType expType *)
-
-and 
- expType= IVar varType |
+and
+ 
+ expType= IVar designator |
          Const scalrValueType |
          iteForm formula  expType  expType |
          uif string "expType list" |
@@ -39,7 +43,7 @@ and
            implyForm formula formula |
            chaos 
 
-
+datatype scavarType=scaArr arrVarType "nat list"
 
 primrec down ::"nat \<Rightarrow>nat list" where
 down0:"down 0=[0]" |
@@ -66,7 +70,7 @@ type_synonym formulaExpPair="formula \<times>  expType"
 section{*assignment, statement, general statement*}
 
  
-type_synonym assignType=   "varType \<times>  expType"   
+type_synonym assignType=   "designator \<times>  expType"   
 (*don't use a\<times>bound \<times>index \<times>content a[ie] = c where ie \<le> bound
 only use a \<times>index \<times>content a[ie] := c *)
 
@@ -156,12 +160,15 @@ varsOfVar, varOfExp, varOfForm and varOfSent respectively*}
 section{*semantics of a protocol*}
 text{*A  state of a protocol  is an instantaneous snapshot of its  behaviour given by an assignment of  values to variables of
 the circuit. Therefore, we define:*}
+type_synonym natList="nat list"
 
-type_synonym state= "scavarType \<Rightarrow> scalrValueType "
+type_synonym arrFun="natList\<Rightarrow> scalrValueType"
+
+type_synonym state= "string \<Rightarrow> arrFun "
 
 
-definition varsOfVar::" varType \<Rightarrow> varType set"  where  [simp]:
-" varsOfVar x  = {x}" 
+(*definition varsOfVar::" varType \<Rightarrow> varType set"  where  [simp]:
+" varsOfVar x  = {x}" *)
 
 
 type_synonym scalrValueTypeListFun="scalrValueType list \<Rightarrow> scalrValueType"
@@ -185,19 +192,31 @@ a statement, is  defined as follows:*}
 primrec statement2Assigns::"statement \<Rightarrow> assignType list" where
 "statement2Assigns (parallel  S)=S"
 
-
+primrec nameOf::"arrVarType \<Rightarrow> string" where
+"nameOf (arrDef str n ns) = str"|
+"nameOf (update a es e) = nameOf a"
 
 text{*The formal semantics of an expression and a formula is formalized as follows:*}
 primrec 
-desnEval :: "interpretFunType \<Rightarrow> varType \<Rightarrow> state \<Rightarrow> scavarType " and
+arrEval::"interpretFunType \<Rightarrow> arrVarType \<Rightarrow> state \<Rightarrow>arrFun"
+(*arrVarType=arrDef string nat "nat list" |
+            update arrVarType "expType list" expType *)
+(*arr "a" 2 [4,4] means an array with two dimensions
+designator=arr arrVarType "expType list"*)
+
+and   
+
+desnEval :: "interpretFunType \<Rightarrow>designator  \<Rightarrow> state \<Rightarrow> scavarType " and
 
 expEval :: "interpretFunType \<Rightarrow> expType \<Rightarrow> state \<Rightarrow> scalrValueType" and
 
  formEval :: "interpretFunType \<Rightarrow> formula \<Rightarrow> state \<Rightarrow>bool"  where
-"desnEval I (Ident x) s= (scaIdent x)"|
-"desnEval I (Para v ie) s = scaPara (desnEval I v s)  (getVal (expEval I ie s))"|
-"desnEval I (Field v str) s = scaField (desnEval I v s) str" |
 
+"arrEval I (arrDef n d ds) s= s n"|
+"arrEval I (update a es e) s= (s (nameOf a))((map (\<lambda>x. getVal (expEval I x s) ) es):= expEval I e s) "|
+
+"desnEval I (arr a es) s= scaArr a (map  es)"|
+                           
 "expEval I  (IVar ie) s =  ( s (desnEval I ie s))" |
 "expEval I (Const i) s =  i"  |
 "expEval I  (iteForm f e1 e2) s= 
@@ -274,8 +293,15 @@ primrec valOf::"interpretFunType\<Rightarrow> state \<Rightarrow> assignType lis
   then (expEval I  (snd x) s)
   else valOf I s xs v)"
 
-primrec substExp :: "expType\<Rightarrow> assignType list \<Rightarrow>expType"  and 
+primerec update "varType \<Rightarrow>assignType list 
+primrec 
+substVar ::"varType \<Rightarrow> assignType list \<Rightarrow> varType"
+substExp :: "expType\<Rightarrow> assignType list \<Rightarrow>expType"  and
 substForm ::"formula \<Rightarrow> assignType list \<Rightarrow> formula" where 
+substVar1:" substVar (Ident str) asgns =(Ident str)" |
+substVar2:" substVar (Para v e) asgns =Para ( substVar v asgns) (substExp e asgns)"  |
+substVar3:" substVar (Field v str) asgns =Field ( substVar v asgns) str" |
+
 
 substExpVar: "substExp  (IVar v') asgns=   (valOf  asgns v'  (Const (index 0)))  "| 
 
