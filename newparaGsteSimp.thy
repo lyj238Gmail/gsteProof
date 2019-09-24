@@ -192,9 +192,17 @@ a statement, is  defined as follows:*}
 primrec statement2Assigns::"statement \<Rightarrow> assignType list" where
 "statement2Assigns (parallel  S)=S"
 
+primrec getParams::"designator \<Rightarrow> expType list" where
+"getParams (arr a es) =es"
+
+
 primrec nameOf::"arrVarType \<Rightarrow> string" where
 "nameOf (arrDef str n ns) = str"|
 "nameOf (update a es e) = nameOf a"
+
+
+primrec nameOfDesn::"designator \<Rightarrow> string" where
+" nameOfDesn (arr a es) =nameOf a"
 
 text{*The formal semantics of an expression and a formula is formalized as follows:*}
 primrec 
@@ -206,18 +214,20 @@ designator=arr arrVarType "expType list"*)
 
 and   
 
-desnEval :: "interpretFunType \<Rightarrow>designator  \<Rightarrow> state \<Rightarrow> scavarType " and
+desnEval :: "interpretFunType \<Rightarrow>designator  \<Rightarrow> state \<Rightarrow> scalrValueType " and
 
 expEval :: "interpretFunType \<Rightarrow> expType \<Rightarrow> state \<Rightarrow> scalrValueType" and
 
  formEval :: "interpretFunType \<Rightarrow> formula \<Rightarrow> state \<Rightarrow>bool"  where
 
 "arrEval I (arrDef n d ds) s= s n"|
-"arrEval I (update a es e) s= (s (nameOf a))((map (\<lambda>x. getVal (expEval I x s) ) es):= expEval I e s) "|
+"arrEval I (update a es e) s= 
+  (let t= arrEval I a s in
+  t((map (\<lambda> e. (getVal (expEval I e s)) ) es):= (expEval I e s))) "|
 
-"desnEval I (arr a es) s= scaArr a (map  es)"|
+"desnEval I (arr a es) s= (arrEval I  a s) (map (\<lambda> e. (getVal (expEval I e s)) ) es)" |
                            
-"expEval I  (IVar ie) s =  ( s (desnEval I ie s))" |
+"expEval I  (IVar ie) s =   desnEval I ie s" |
 "expEval I (Const i) s =  i"  |
 "expEval I  (iteForm f e1 e2) s= 
    ( if (formEval I f s) then     (expEval I e1 s)
@@ -237,31 +247,20 @@ evalImp:"formEval I (implyForm f1 f2) s= ( (formEval I f1 s) \<longrightarrow>  
 primrec getIndexOfExp::"expType \<Rightarrow> nat" where
 "getIndexOfExp (Const i) =getVal i"
 
-
-
-
-  (*(if (isSimpAssign x)   
-  then (if (paraNameOfAssign x) =v then  rightOfAssign x else valOf  xs v   indexE ) 
-  else (iteForm 
-         (andForm (eqn (IVar v) (IVar (paraNameOfAssign x))) (eqn  (leftIndexOfAssign x) indexE))
-        (rightOfAssign x)
-        ( valOf  xs v   indexE)))"*)
-  (*else (iteForm 
-        (andForm (andForm (eqn (IVar v) (IVar (paraNameOfAssign x)))  (eqn (Const (index bound)) (Const (index (boundOfAssign x)))))
-            (eqn  (leftIndexOfAssign x) indexE))
-        (rightOfAssign x)
-        ( valOf  xs v  bound indexE)))"*)
-(*  else (if ((Para (paraNameOfAssign x) (getIndexOfExp (leftIndexOfAssign x))))= v 
-        then (rightOfAssign x)
-       else valOf  xs v ))"*)
-(*a\<times>bound \<times>index \<times>content a[ie] = c where ie \<le> bound*)  
-
-
 primrec transAux:: "assignType list \<Rightarrow>interpretFunType \<Rightarrow> state \<Rightarrow>state " where
-"transAux [] I s= s " |
-"transAux (asgn#asgns) I s=
-  (let result=( transAux asgns I s) in
-   result((desnEval I (fst asgn) s) := expEval I (snd asgn) s)) "
+"transAux [] I s a= s a " 
+|
+"transAux (asgn#asgns) I s a=
+  (
+  let a'=(nameOfDesn (fst asgn)) in
+  if (a=a') then 
+   ((s a)( (map (\<lambda> e. (getVal (expEval I e s)) ) (getParams (fst asgn))):= (expEval I (snd asgn) s)))
+  else ( transAux asgns I s) a)"
+
+(*(let result=( transAux asgns I s) in
+  let a=(nameOfDesn (fst asgn)) in
+  result( a:= ((s a)( (map (\<lambda> e. (getVal (expEval I e s)) ) (getParams (fst asgn))):= (expEval I (snd asgn) s)))))" *)
+  (* result((desnEval I (fst asgn) s) := expEval I (snd asgn) s)) "*)
 
 definition trans:: "statement \<Rightarrow> interpretFunType \<Rightarrow> state \<Rightarrow> state " where [simp]:
 "trans S I s \<equiv> transAux ( statement2Assigns S) I s"
@@ -286,24 +285,28 @@ oneStep:    " \<lbrakk>s \<in>  reachableSet I inis rules ;
 
 section{*substitution, weakest precondition*}
 
-primrec valOf::"interpretFunType\<Rightarrow> state \<Rightarrow> assignType list \<Rightarrow> varType \<Rightarrow> scalrValueType"  where
-"valOf I s [] v   = (expEval I  (IVar v) s) " |
-"valOf I s (x#xs) v  = 
-  (if (desnEval I  (fst x) s=desnEval I  v s)
-  then (expEval I  (snd x) s)
-  else valOf I s xs v)"
+primrec updates::" assignType list \<Rightarrow> arrVarType \<Rightarrow> arrVarType"  where
+" updates  [] a   = a " |
+" updates (x#xs) a  = 
+  (if ((nameOfDesn  (fst x)) = (nameOf a))
+  then  (update a (getParams (fst x)) (snd x))
+  else updates xs a)"
 
-primerec update "varType \<Rightarrow>assignType list 
 primrec 
-substVar ::"varType \<Rightarrow> assignType list \<Rightarrow> varType"
+substArrDef::" arrVarType\<Rightarrow>assignType list \<Rightarrow> arrVarType "  where
+
+"substArrDef (arrDef a d ds) asgns=updates  asgns (arrDef a d ds)"| 
+"substArrDef (update a es e) asgns=updates  asgns (update a es e)"
+
+primrec 
+substVar ::"designator \<Rightarrow> assignType list \<Rightarrow> designator" and 
 substExp :: "expType\<Rightarrow> assignType list \<Rightarrow>expType"  and
 substForm ::"formula \<Rightarrow> assignType list \<Rightarrow> formula" where 
-substVar1:" substVar (Ident str) asgns =(Ident str)" |
-substVar2:" substVar (Para v e) asgns =Para ( substVar v asgns) (substExp e asgns)"  |
-substVar3:" substVar (Field v str) asgns =Field ( substVar v asgns) str" |
 
 
-substExpVar: "substExp  (IVar v') asgns=   (valOf  asgns v'  (Const (index 0)))  "| 
+substVar1:" substVar (arr a es) asgns =arr (updates asgns a  ) (map (\<lambda>e. substExp e asgns) es)" |
+
+substExpVar: "substExp  (IVar v') asgns=   IVar (substVar v' asgns)  "| 
 
 substExpConst: "substExp  (Const i)  asgns= Const i" |
 
@@ -316,8 +319,6 @@ substExpite: "substExp  (iteForm f e1 e2)  asgns= (iteForm (substForm f asgns) (
 substUif: "substExp (uif f es) asgns =( uif f (map (\<lambda>e. substExp e asgns) es))"| 
 
 
-substReadE:"substExp   (readE  a e) asgns=  (valOf  asgns a  e)"|
-
 "substForm (eqn l r)  asgns=(eqn (substExp l  asgns) (substExp r  asgns))"  |
 "substForm ( andForm f1 f2)  asgns =   ( andForm (substForm f1  asgns)  (substForm f2  asgns))"|
 "substForm (neg f1 )   asgns= (neg ( substForm f1  asgns ))"|
@@ -326,11 +327,76 @@ substReadE:"substExp   (readE  a e) asgns=  (valOf  asgns a  e)"|
 "substForm (uip p es)   asgns= ( uip p (map (\<lambda>e. substExp e asgns) es))" |
 "substForm  chaos   asgns=chaos"
 
+lemma lemmaOnPreArrDef:
+  shows "arrDef0=(arrDef a d ds) \<longrightarrow> arrEval I (substArrDef arrDef0 S) s = arrEval I  arrDef0 (trans (parallel S) I s)"
+ 
+proof(induct_tac arrDef0,auto)
+  fix x1 x2 x3 
+  show "arrEval I (updates S (arrDef x1 x2 x3)) s = transAux S I s x1" (is "?LHS3 S =?RHS3 S")
+  proof(induct_tac S)
+    show "?LHS3 [] =?RHS3 []" by auto
+  next
+    fix a S
+    
+    assume a:"?LHS3 S =?RHS3 S"
+    let ?S="a#S"
+    show "?LHS3 ?S =?RHS3 ?S"
+    proof(case_tac "nameOfDesn (fst a) = x1",cut_tac a,auto,rule ext,cut_tac a,auto) qed
+
+  qed
+qed
+
+lemma lemmaOnPreArrDef:
+  shows "arrDef0=(arrDef a d ds) \<longrightarrow>arrEval I (substArrDef arrDef0 S) s = arrEval I  arrDef0 (trans (parallel S) I s)"
+ 
+proof(induct_tac arrDef0,auto)
+  fix x1 x2 x3 
+  show "arrEval I (updates S (arrDef x1 x2 x3)) s = transAux S I s x1" (is "?LHS3 S =?RHS3 S")
+  proof(induct_tac S)
+    show "?LHS3 [] =?RHS3 []" by auto
+  next
+    fix a S
+    
+    assume a:"?LHS3 S =?RHS3 S"
+    let ?S="a#S"
+    show "?LHS3 ?S =?RHS3 ?S"
+    proof(case_tac "nameOfDesn (fst a) = x1",cut_tac a,auto,rule ext,cut_tac a,auto) qed
+
+  qed
+next
+  fix x1 x2 x3 
+  assume a:"arrEval I (substArrDef x1 S) s=arrEval I x1 (transAux S I s)"
+  show "arrEval I (updates S (update x1 x2 x3)) s = 
+      (\<lambda>a. (if a=map (\<lambda>e. getVal (expEval I e (transAux S I s))) x2 then expEval I x3 (transAux S I s) else arrEval I x1 (transAux S I s) a))"
+      (is "?LHS = (\<lambda>a. ?RHS a)")
+  proof(rule ext)
+    fix a
+    show "?LHS a =?RHS a"
+    proof(cut_tac a,case_tac "a=map (\<lambda>e. getVal (expEval I e (transAux S I s))) x2",simp)
+
+proof(induct_tac S)
+  show "?LHS2 arrDef0 []  =?RHS2 arrDef0 []"
+    by (case_tac arrDef0, auto)
+next
+  fix a S
+  assume a:"?LHS2 arrDef0 S   =?RHS2 arrDef0 S"
+  have "?LHS2 arrDef0 S   =?RHS2 arrDef0 S \<longrightarrow> ?LHS2 arrDef0(a# S)  =?RHS2 arrDef0 (a#S)"
+    apply (induct_tac arrDef0,auto)
+
+lemma lemmaOnPres:
+  shows "
+  arrEval I (substArrDef arrDef0 S) s = arrEval I  arrDef0 (trans (parallel S) I s) \<and>
+  desnEval I (substVar desn S) s= desnEval I desn (trans (parallel S) I s)\<and> 
+(expEval I (substExp e S ) s =   expEval I  e (trans (parallel S) I s)) \<and>
+   (formEval I (substForm f S ) s = formEval I f (trans (parallel S) I s))  "
+proof(induct_tac  desn and e and f )
 
 primrec  preCond1 ::" formula \<Rightarrow> statement  \<Rightarrow>formula" where
 "preCond1 f ( parallel  S)  = substForm f S " 
 
 
+   (is "( ( ?LHS2 arrDef0 =?RHS2 arrDef0)\<and> ( ?LHS3 desn =?RHS3 desn )\<and> ?LHS e =?RHS e )\<and> ( ?LHS1 f =?RHS1 f )
+        ") 
 primrec  preExp1 ::" expType \<Rightarrow>  statement  \<Rightarrow>expType" where [simp]:
 "preExp1 e  (parallel  S)  = substExp e S"
 
@@ -524,7 +590,7 @@ proof(induct_tac e and f)
   fix v
   let ?e="(IVar v)"
   show  "  ?LHS ?e =?RHS ?e "
-  apply(simp)
+  proof(simp)
   by (simp add: lemmaOnValOf)
  
 next
