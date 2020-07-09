@@ -1,40 +1,46 @@
 from z3 import *
 class node
-    index:int
-    w:int
-    dw:int
-    def solve(self, parameter_list):
+    def __init__(self, index,w, dw, d):
+        self.w=w
+        self.dw=dw
+        self.d=d
+        self.index=index
+
+    def solve(self):
         s = Solver()
-        head,tail=BitVecs('head tail',w)
-        mem=Array('mem',BitVecSort(dw),BitVecSort(dw))
-        if (index==0)
+        head,tail=BitVecs('head tail',self.w)
+        mem=Array('mem',BitVecSort(self.dw),BitVecSort(self.dw))
+        if (self.index==0)
             sols=[]
         else:
-            if (index%2==1)
-                if (index==1)
+            if (self.index%2==1)
+                if (self.index==1)
                     s.add(tail==0)
                     s.add(emptyFifo==true)    
                 else:
-                    s.add(tail==(index/2 - 1))
+                    s.add(tail==(self.index/2 - 1))
                     s.add(emptyFifo==false)
-        
-        if 
-        s.add(tail==head + 1)
-        s.add(mem[head]==2)
+            else:
+                s.add(tail==(self.index/2 - 2))
+                s.add(emptyFifo==false)
+                s.add(mem[0]==d)
 
-        solvs=
+            sols=[]
+            while s.check() == sat:
+                print("model", n)
+                m = s.model()
+                sol=[]
+                for d in m:
+                    sol=sol.append(d,m[d])
+                    print(d, m[d])
+                print("mem",eval(mem[0]))
+                sol=sol.append("mem",0)
+                sols=sols.append(sol)
+                s.add(Or( tail != s.model()[tail]))
 
-        while s.check() == sat:
-            print("model", n)
-            n=n+1;
-            m = s.model()
-            for d in m:
-                print(d, m[d])
-            print(m.eval(mem[head]))
-            s.add(Or(head != s.model()[head], tail != s.model()[tail]))
-
-
-(let x=node2Nat n in
+w=node(15,4,64,0)
+w.solve()
+"""(let x=node2Nat n in
    let DataE=(Const (index DATA)) in
    if (x = 0) then [] else
     (if ((x mod 2) = 1) then 
@@ -45,4 +51,4 @@ class node
     (if (x = 2) then [] else
      [eqn tail (Const (index (x div 2 - 2 ))), eqn  emptyFifo (Const (boolV False)), 
      eqn (IVar (Para (Ident ''mem'') 0)) DataE ]) )
-     )
+     )"""
